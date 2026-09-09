@@ -358,6 +358,70 @@ export const INITIAL_ORDERS: Order[] = [
 
 export const INITIAL_CONVERSATIONS: Conversation[] = [
   {
+    id: 'conv_omar',
+    participantId: 'usr_omar',
+    participantUsername: 'omar_coder',
+    participantDisplayName: 'عمر القحطاني',
+    participantAvatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
+    isVerified: true,
+    type: 'social',
+    lastMessage: 'شكراً لمشاركتك المنشور الأخير، مقال ممتاز ومفيد جداً!',
+    lastMessageTime: 'أمس',
+    unreadCount: 0,
+    messages: [
+      {
+        id: 'm_o1',
+        senderId: 'usr_omar',
+        senderUsername: 'omar_coder',
+        senderAvatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
+        text: 'مرحباً أحمد، كيف حال مشروعك الجديد في البرمجة والتطوير؟',
+        createdAt: 'أمس 04:15 م',
+        isMe: false
+      },
+      {
+        id: 'm_o2',
+        senderId: 'usr_me',
+        senderUsername: 'ahmed_dev',
+        senderAvatar: CURRENT_USER.avatar,
+        text: 'أهلاً عمر! الأمور تسير بروعة، شكراً لسؤالك وسعيد بتبادل الخبرات معك دائماً.',
+        createdAt: 'أمس 04:20 م',
+        isMe: true
+      },
+      {
+        id: 'm_o3',
+        senderId: 'usr_omar',
+        senderUsername: 'omar_coder',
+        senderAvatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
+        text: 'شكراً لمشاركتك المنشور الأخير، مقال ممتاز ومفيد جداً!',
+        createdAt: 'أمس 04:25 م',
+        isMe: false
+      }
+    ]
+  },
+  {
+    id: 'conv_tariq',
+    participantId: 'usr_tariq',
+    participantUsername: 'tariq_ui',
+    participantDisplayName: 'طارق السعيد (مطور واجهات)',
+    participantAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+    isVerified: true,
+    type: 'social',
+    lastMessage: 'مرحباً أحمد! أعجبني أسلوبك في منشور الأمان الأخير، بالتوفيق دائماً ✨',
+    lastMessageTime: 'منذ ساعتين',
+    unreadCount: 1,
+    messages: [
+      {
+        id: 'm_t1',
+        senderId: 'usr_tariq',
+        senderUsername: 'tariq_ui',
+        senderAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+        text: 'مرحباً أحمد! أعجبني أسلوبك في منشور الأمان الأخير، بالتوفيق دائماً ✨',
+        createdAt: 'منذ ساعتين',
+        isMe: false
+      }
+    ]
+  },
+  {
     id: 'conv_sara',
     participantId: 'usr_sara',
     participantUsername: 'sara_design',
@@ -366,7 +430,7 @@ export const INITIAL_CONVERSATIONS: Conversation[] = [
     isVerified: true,
     type: 'market',
     relatedProductTitle: 'حزمة قوالب Figma للواجهات الإدارية الشاملة',
-    lastMessage: 'أهلاً بك يا أحمد! نعم القالب متوافق تماماً مع آخر تحديثات Figma مع التحديث المجاني.',
+    lastMessage: 'أهلاً بك يا أحمد! نعم القالب متوافق تماماً مع آخر تحديثات Figma مع التحديث المجاني وتضمين الجداول التفاعلية.',
     lastMessageTime: '10:45 ص',
     unreadCount: 1,
     messages: [
@@ -399,47 +463,6 @@ export const INITIAL_CONVERSATIONS: Conversation[] = [
     ]
   },
   {
-    id: 'conv_omar',
-    participantId: 'usr_omar',
-    participantUsername: 'omar_coder',
-    participantDisplayName: 'عمر القحطاني',
-    participantAvatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
-    isVerified: true,
-    type: 'social',
-    lastMessage: 'شكراً لمشاركتك المنشور الأخير، مقال ممتاز ومفيد جداً!',
-    lastMessageTime: 'أمس',
-    unreadCount: 0,
-    messages: [
-      {
-        id: 'm_o1',
-        senderId: 'usr_omar',
-        senderUsername: 'omar_coder',
-        senderAvatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
-        text: 'مرحباً أحمد، كيف حال مشروعك الجديد في React 19؟',
-        createdAt: 'أمس 04:15 م',
-        isMe: false
-      },
-      {
-        id: 'm_o2',
-        senderId: 'usr_me',
-        senderUsername: 'ahmed_dev',
-        senderAvatar: CURRENT_USER.avatar,
-        text: 'أهلاً عمر! الأمور تسير بروعة، الأداء عالي جداً مع ميزات السيرفر اكشنز و Tailwind v4.',
-        createdAt: 'أمس 04:20 م',
-        isMe: true
-      },
-      {
-        id: 'm_o3',
-        senderId: 'usr_omar',
-        senderUsername: 'omar_coder',
-        senderAvatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
-        text: 'شكراً لمشاركتك المنشور الأخير، مقال ممتاز ومفيد جداً!',
-        createdAt: 'أمس 04:25 م',
-        isMe: false
-      }
-    ]
-  },
-  {
     id: 'conv_noura',
     participantId: 'usr_noura',
     participantUsername: 'noura_academy',
@@ -468,29 +491,6 @@ export const INITIAL_CONVERSATIONS: Conversation[] = [
         senderAvatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80',
         text: 'تم إرسال رابط التحديث الإضافي لجداول الإكسل في البريد، قراءة ممتعة!',
         createdAt: 'منذ يومين',
-        isMe: false
-      }
-    ]
-  },
-  {
-    id: 'conv_tariq',
-    participantId: 'usr_tariq',
-    participantUsername: 'tariq_ui',
-    participantDisplayName: 'طارق السعيد (مطور واجهات)',
-    participantAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-    isVerified: true,
-    type: 'social',
-    lastMessage: 'مرحباً أحمد! أعجبني أسلوبك في منشور الأمان الأخير، بالتوفيق دائماً ✨',
-    lastMessageTime: 'منذ ساعتين',
-    unreadCount: 1,
-    messages: [
-      {
-        id: 'm_t1',
-        senderId: 'usr_tariq',
-        senderUsername: 'tariq_ui',
-        senderAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-        text: 'مرحباً أحمد! أعجبني أسلوبك في منشور الأمان الأخير، بالتوفيق دائماً ✨',
-        createdAt: 'منذ ساعتين',
         isMe: false
       }
     ]

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   User as UserIcon, 
   CreditCard, 
@@ -14,10 +14,33 @@ import {
   KeyRound,
   Eye,
   EyeOff,
-  LogOut
+  LogOut,
+  Camera,
+  Upload,
+  Image as ImageIcon,
+  Sparkles,
+  X,
+  RefreshCw,
+  Link2,
+  CheckCircle2
 } from 'lucide-react';
 import { User, SavedCard } from '../types';
 import { validateCreditCardNumber, validateCardExpiry, validateCardCVV, formatCardNumber } from '../utils/security';
+
+const PRESET_AVATARS = [
+  { id: 'av_1', label: 'مطور ومبرمج', url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=250&auto=format&fit=crop&q=80' },
+  { id: 'av_2', label: 'مصممة محترفة', url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=250&auto=format&fit=crop&q=80' },
+  { id: 'av_3', label: 'رائد أعمال', url: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=250&auto=format&fit=crop&q=80' },
+  { id: 'av_4', label: 'مبتكرة محتوى', url: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=250&auto=format&fit=crop&q=80' },
+  { id: 'av_5', label: 'مهندس برمجيات', url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=250&auto=format&fit=crop&q=80' },
+  { id: 'av_6', label: 'خبيرة استشارية', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=250&auto=format&fit=crop&q=80' },
+  { id: 'av_7', label: 'مطور تطبيقات', url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=250&auto=format&fit=crop&q=80' },
+  { id: 'av_8', label: 'مصممة واجهات', url: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=250&auto=format&fit=crop&q=80' },
+  { id: 'av_9', label: 'مستشار تسويق', url: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=250&auto=format&fit=crop&q=80' },
+  { id: 'av_10', label: 'أفاتار 3D ملهم', url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=250&auto=format&fit=crop&q=80' },
+  { id: 'av_11', label: 'فن رقمي حديث', url: 'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=250&auto=format&fit=crop&q=80' },
+  { id: 'av_12', label: 'هوية رقمية تقنية', url: 'https://images.unsplash.com/photo-1618172193763-c511deb635ca?w=250&auto=format&fit=crop&q=80' }
+];
 
 interface ProfileViewProps {
   currentUser: User;
@@ -41,8 +64,31 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [username, setUsername] = useState(currentUser.username);
   const [email, setEmail] = useState(currentUser.email);
   const [bio, setBio] = useState(currentUser.bio || '');
+  const [avatar, setAvatar] = useState(currentUser.avatar);
   const [infoSuccess, setInfoSuccess] = useState(false);
   const [infoError, setInfoError] = useState<string | null>(null);
+
+  // Avatar Edit Modal State
+  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
+  const [avatarModalTab, setAvatarModalTab] = useState<'upload' | 'preset' | 'url'>('upload');
+  const [tempAvatar, setTempAvatar] = useState(currentUser.avatar);
+  const [urlInput, setUrlInput] = useState('');
+  const [avatarUploadError, setAvatarUploadError] = useState<string | null>(null);
+  const [avatarToast, setAvatarToast] = useState(false);
+
+  // File input refs
+  const modalFileInputRef = useRef<HTMLInputElement>(null);
+  const directFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync state if currentUser changes (e.g., account switch)
+  useEffect(() => {
+    setDisplayName(currentUser.displayName);
+    setUsername(currentUser.username);
+    setEmail(currentUser.email);
+    setBio(currentUser.bio || '');
+    setAvatar(currentUser.avatar);
+    setTempAvatar(currentUser.avatar);
+  }, [currentUser]);
 
   // Security Tab State
   const [oldPassword, setOldPassword] = useState('');
@@ -59,6 +105,73 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [cvv, setCvv] = useState('123');
   const [cardSuccess, setCardSuccess] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
+
+  // Handle File Upload from device
+  const processImageFile = (file: File) => {
+    setAvatarUploadError(null);
+
+    if (!file.type.startsWith('image/')) {
+      setAvatarUploadError('يرجى اختيار ملف صورة صالح بتنسيق (PNG, JPG, JPEG, WEBP).');
+      return;
+    }
+
+    if (file.size > 6 * 1024 * 1024) {
+      setAvatarUploadError('حجم الصورة كبير جداً، الحد الأقصى المسموح هو 6 ميغابايت.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setTempAvatar(reader.result);
+      }
+    };
+    reader.onerror = () => {
+      setAvatarUploadError('حدث خطأ أثناء قراءة ملف الصورة، يرجى المحاولة مرة أخرى.');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Direct fast upload from file input without opening modal
+  const handleDirectFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('يرجى اختيار ملف صورة صالح.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        const newImg = reader.result;
+        setAvatar(newImg);
+        setTempAvatar(newImg);
+        onUpdateProfile({ avatar: newImg });
+        setAvatarToast(true);
+        setTimeout(() => setAvatarToast(false), 3500);
+      }
+    };
+    reader.readAsDataURL(file);
+    // Reset input value so same file can be re-selected if needed
+    e.target.value = '';
+  };
+
+  // Save selected avatar
+  const handleSaveAvatar = (avatarToSave?: string) => {
+    const chosen = avatarToSave || tempAvatar;
+    if (!chosen || !chosen.trim()) {
+      setAvatarUploadError('يرجى اختيار أو رفع صورة أولاً.');
+      return;
+    }
+
+    setAvatar(chosen);
+    onUpdateProfile({ avatar: chosen });
+    setIsAvatarModalOpen(false);
+    setAvatarToast(true);
+    setTimeout(() => setAvatarToast(false), 3500);
+  };
 
   // Password strength calculation
   const getPasswordStrength = (pwd: string) => {
@@ -106,7 +219,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       displayName: displayName.trim(),
       username: cleanUsername,
       email: cleanEmail,
-      bio: bio.trim()
+      bio: bio.trim(),
+      avatar: avatar
     });
 
     setInfoSuccess(true);
@@ -194,11 +308,24 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         <div className="px-6 pb-6 pt-0 relative">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 -mt-14 mb-4">
             <div className="flex items-end gap-4">
-              <img
-                src={currentUser.avatar}
-                alt={currentUser.displayName}
-                className="w-24 h-24 rounded-2xl object-cover ring-4 ring-white dark:ring-slate-900 shadow-md bg-white shrink-0"
-              />
+              <div className="relative group shrink-0">
+                <img
+                  src={avatar}
+                  alt={currentUser.displayName}
+                  className="w-24 h-24 rounded-2xl object-cover ring-4 ring-white dark:ring-slate-900 shadow-md bg-white shrink-0 group-hover:brightness-95 transition"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTempAvatar(avatar);
+                    setIsAvatarModalOpen(true);
+                  }}
+                  title="تغيير الصورة الشخصية"
+                  className="absolute -bottom-1 -left-1 p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-lg border-2 border-white dark:border-slate-900 transition flex items-center justify-center cursor-pointer hover:scale-105 active:scale-95"
+                >
+                  <Camera className="w-4 h-4" />
+                </button>
+              </div>
               <div className="mb-1">
                 <div className="flex items-center gap-2">
                   <h1 className="text-xl font-black text-slate-900 dark:text-white">
@@ -301,12 +428,74 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
       {/* TAB 1: Personal Info & Email (Includes Uniqueness Checking) */}
       {activeTab === 'info' && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4">
-          <div>
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">تعديل البيانات الأساسية</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              يتم فحص اسم المستخدم والبريد الإلكتروني لمنع التكرار وضمان أمان الحساب
-            </p>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">تعديل البيانات الأساسية والصورة</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                يمكنك تحديث صورتك الشخصية، الاسم، واسم المستخدم والبريد الإلكتروني المعتمد
+              </p>
+            </div>
+          </div>
+
+          {/* Dedicated Profile Picture Section */}
+          <div className="p-4 bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5 w-full sm:w-auto">
+              <div className="relative shrink-0">
+                <img
+                  src={avatar}
+                  alt={currentUser.displayName}
+                  className="w-16 h-16 rounded-2xl object-cover ring-2 ring-indigo-500/40 shadow-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTempAvatar(avatar);
+                    setIsAvatarModalOpen(true);
+                  }}
+                  className="absolute -bottom-1 -left-1 p-1.5 bg-indigo-600 text-white rounded-lg shadow-sm border border-white dark:border-slate-800 hover:bg-indigo-700 transition cursor-pointer"
+                  title="تعديل الصورة الشخصية"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div>
+                <h4 className="font-bold text-slate-800 dark:text-slate-100 text-xs sm:text-sm">الصورة الشخصية الحالية</h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  تظهر في المنشورات، تعليقات المجتمع، بطاقات المتجر، والمحادثات المباشرة.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <input
+                type="file"
+                ref={directFileInputRef}
+                onChange={handleDirectFileChange}
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => directFileInputRef.current?.click()}
+                className="flex-1 sm:flex-initial px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition flex items-center justify-center gap-1.5 text-xs shadow-xs cursor-pointer active:scale-95"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>رفع صورة من جهازك</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTempAvatar(avatar);
+                  setIsAvatarModalOpen(true);
+                }}
+                className="flex-1 sm:flex-initial px-3.5 py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 font-bold rounded-xl transition flex items-center justify-center gap-1.5 text-xs cursor-pointer active:scale-95"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>أفاتار أو رابط</span>
+              </button>
+            </div>
           </div>
 
           <form onSubmit={handleSaveInfo} className="space-y-4 text-xs">
@@ -683,6 +872,297 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               عند قيام أي مشترٍ بشراء منتج رقمي، تظل الأموال محجوزة في محفظة المنصة الآمنة لمدة 14 يوماً. بعد انتهاء فترة الضمان أو تأكيد المشتري رضاه، يتم تحويل المبلغ مباشرة إلى رصيدك البنكي القابل للسحب، مما يبني سمعة لا تشوبها شائبة ويمنع الشكاوى الكيدية.
             </p>
           </div>
+        </div>
+      )}
+
+      {/* AVATAR EDIT MODAL */}
+      {isAvatarModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div 
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg p-5 sm:p-6 shadow-2xl relative space-y-5 animate-scaleUp overflow-hidden max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                  <Camera className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">تعديل الصورة الشخصية</h3>
+                  <p className="text-[11px] text-slate-500">اختر الطريقة الأنسب لك لتحديث صورتك الشخصية</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsAvatarModalOpen(false);
+                  setAvatarUploadError(null);
+                }}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Navigation Tabs inside modal */}
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/70 p-1 rounded-xl text-xs font-bold shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setAvatarModalTab('upload');
+                  setAvatarUploadError(null);
+                }}
+                className={`flex-1 py-2 px-3 rounded-lg transition flex items-center justify-center gap-1.5 ${
+                  avatarModalTab === 'upload'
+                    ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>رفع من الجهاز</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAvatarModalTab('preset');
+                  setAvatarUploadError(null);
+                }}
+                className={`flex-1 py-2 px-3 rounded-lg transition flex items-center justify-center gap-1.5 ${
+                  avatarModalTab === 'preset'
+                    ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>أفاتار جاهز</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAvatarModalTab('url');
+                  setAvatarUploadError(null);
+                }}
+                className={`flex-1 py-2 px-3 rounded-lg transition flex items-center justify-center gap-1.5 ${
+                  avatarModalTab === 'url'
+                    ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                <span>رابط خارجي</span>
+              </button>
+            </div>
+
+            {/* Error Message if any */}
+            {avatarUploadError && (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 rounded-xl text-rose-700 dark:text-rose-300 flex items-center gap-2 text-xs shrink-0">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{avatarUploadError}</span>
+              </div>
+            )}
+
+            {/* Tab Contents (Scrollable area) */}
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {/* TAB 1: Upload from Device */}
+              {avatarModalTab === 'upload' && (
+                <div className="space-y-3">
+                  <input
+                    type="file"
+                    ref={modalFileInputRef}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) processImageFile(file);
+                    }}
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    className="hidden"
+                  />
+
+                  <div
+                    onClick={() => modalFileInputRef.current?.click()}
+                    className="border-2 border-dashed border-indigo-200 dark:border-indigo-900/60 hover:border-indigo-500 dark:hover:border-indigo-500 rounded-2xl p-6 text-center cursor-pointer bg-slate-50/70 dark:bg-slate-800/40 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20 transition flex flex-col items-center justify-center gap-2.5"
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                      <Upload className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <span className="font-bold text-xs text-slate-800 dark:text-slate-200 block">
+                        انقر لاختيار صورة من هاتفك أو حاسوبك
+                      </span>
+                      <span className="text-[11px] text-slate-400 mt-1 block">
+                        صيغ مدعومة: JPG, PNG, WEBP (حتى 6 ميغابايت)
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="mt-1 px-4 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-xs hover:bg-indigo-700 transition"
+                    >
+                      تصفح الملفات
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: Curated Presets */}
+              {avatarModalTab === 'preset' && (
+                <div className="space-y-3">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    اختر صورة رمزية معبرة من الأفاتارات المصممة بعناية:
+                  </p>
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5">
+                    {PRESET_AVATARS.map((preset) => {
+                      const isSelected = tempAvatar === preset.url;
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => {
+                            setTempAvatar(preset.url);
+                            setAvatarUploadError(null);
+                          }}
+                          className={`relative rounded-2xl overflow-hidden aspect-square border-2 transition p-0.5 group cursor-pointer ${
+                            isSelected 
+                              ? 'border-indigo-600 dark:border-indigo-400 ring-2 ring-indigo-500/30' 
+                              : 'border-slate-200 dark:border-slate-700 hover:border-slate-400'
+                          }`}
+                        >
+                          <img
+                            src={preset.url}
+                            alt={preset.label}
+                            className="w-full h-full object-cover rounded-xl group-hover:scale-105 transition"
+                          />
+                          {isSelected && (
+                            <div className="absolute inset-0 bg-indigo-600/30 flex items-center justify-center">
+                              <div className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-md">
+                                <Check className="w-3 h-3 stroke-[3]" />
+                              </div>
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: Direct URL */}
+              {avatarModalTab === 'url' && (
+                <div className="space-y-3">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    أدخل رابط الصورة المباشر (URL):
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={urlInput}
+                      onChange={(e) => setUrlInput(e.target.value)}
+                      placeholder="https://images.unsplash.com/..."
+                      className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs text-left font-mono"
+                      dir="ltr"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (urlInput.trim()) {
+                          setTempAvatar(urlInput.trim());
+                          setAvatarUploadError(null);
+                        } else {
+                          setAvatarUploadError('يرجى كتابة رابط صورة صالح أولاً.');
+                        }
+                      }}
+                      className="px-3.5 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 rounded-xl text-xs font-bold transition shrink-0"
+                    >
+                      معاينة
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    تأكد أن الرابط ينتهي بصيغة صورة أو من مصادر صور عامة موثوقة.
+                  </p>
+                </div>
+              )}
+
+              {/* Live Preview Box */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  {/* Square preview */}
+                  <div className="text-center">
+                    <img
+                      src={tempAvatar}
+                      alt="معاينة"
+                      className="w-14 h-14 rounded-2xl object-cover ring-2 ring-indigo-500/40 shadow-sm mx-auto bg-white"
+                      onError={() => {
+                        setAvatarUploadError('تعذر تحميل الصورة من هذا الرابط، تأكد من صحة الرابط.');
+                      }}
+                    />
+                    <span className="text-[9px] text-slate-400 font-bold block mt-1">مربع</span>
+                  </div>
+
+                  {/* Circular preview */}
+                  <div className="text-center">
+                    <img
+                      src={tempAvatar}
+                      alt="معاينة دائرية"
+                      className="w-14 h-14 rounded-full object-cover ring-2 ring-indigo-500/40 shadow-sm mx-auto bg-white"
+                    />
+                    <span className="text-[9px] text-slate-400 font-bold block mt-1">دائري</span>
+                  </div>
+
+                  <div className="mr-2">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100 block">
+                      معاينة الظهور
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                      هكذا ستبدو صورتك في المجتمع والمتجر
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setTempAvatar(currentUser.avatar)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition text-xs flex items-center gap-1 font-semibold"
+                  title="استعادة الصورة الأصلية"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline text-[10px]">استعادة</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAvatarModalOpen(false);
+                  setAvatarUploadError(null);
+                }}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+              >
+                إلغاء
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSaveAvatar()}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5 active:scale-95 cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>حفظ واعتماد الصورة الشخصية</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUCCESS FLOATING TOAST */}
+      {avatarToast && (
+        <div className="fixed bottom-24 sm:bottom-8 right-6 z-50 bg-emerald-600 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 text-xs font-bold animate-slideUp">
+          <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
+            <Check className="w-3.5 h-3.5 stroke-[3]" />
+          </div>
+          <span>تم تحديث صورتك الشخصية بنجاح في كامل المنصة!</span>
         </div>
       )}
 

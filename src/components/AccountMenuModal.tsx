@@ -51,15 +51,27 @@ export const AccountMenuModal: React.FC<AccountMenuModalProps> = ({
         </button>
 
         {/* User Card Header */}
-        <div className="flex items-center gap-3.5 pb-4 border-b border-slate-100 dark:border-slate-800 mb-4">
-          <img
-            src={currentUser.avatar}
-            alt={currentUser.displayName}
-            className="w-14 h-14 rounded-2xl object-cover ring-2 ring-indigo-500/30 shadow-md shrink-0"
-          />
+        <div 
+          onClick={() => {
+            onSelectTab('profile');
+            onClose();
+          }}
+          className="flex items-center gap-3.5 pb-4 border-b border-slate-100 dark:border-slate-800 mb-4 cursor-pointer group hover:bg-slate-50 dark:hover:bg-slate-800/40 -mx-2 px-2 pt-1 rounded-2xl transition"
+          title="انقر لفتح الملف الشخصي وتعديل الصورة"
+        >
+          <div className="relative shrink-0">
+            <img
+              src={currentUser.avatar}
+              alt={currentUser.displayName}
+              className="w-14 h-14 rounded-2xl object-cover ring-2 ring-indigo-500/30 shadow-md shrink-0 group-hover:scale-105 transition"
+            />
+            <div className="absolute -bottom-1 -left-1 p-1 bg-indigo-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition shadow-xs text-[10px]">
+              ✏️
+            </div>
+          </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <h3 className="text-sm font-black text-slate-900 dark:text-white truncate">
+              <h3 className="text-sm font-black text-slate-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">
                 {currentUser.displayName}
               </h3>
               {currentUser.isVerifiedSeller && (
@@ -69,9 +81,14 @@ export const AccountMenuModal: React.FC<AccountMenuModalProps> = ({
             <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
               @{currentUser.username}
             </p>
-            <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
-              {currentUser.isVerifiedSeller ? 'حساب بائع موثق' : 'حساب مشتري'}
-            </span>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                {currentUser.isVerifiedSeller ? 'حساب بائع موثق' : 'حساب مشتري'}
+              </span>
+              <span className="text-[10px] text-indigo-500 dark:text-indigo-400 font-semibold group-hover:underline">
+                تعديل الحساب ←
+              </span>
+            </div>
           </div>
         </div>
 

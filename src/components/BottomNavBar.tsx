@@ -14,6 +14,7 @@ interface BottomNavBarProps {
   activeSection: 'social' | 'market';
   activeTab: string;
   onSelectTab: (tab: string) => void;
+  onSwitchSection?: (section: 'social' | 'market') => void;
   cartBadgeCount: number;
   unreadMessagesCount: number;
   unreadMarketMessagesCount?: number;
@@ -28,6 +29,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
   activeSection,
   activeTab,
   onSelectTab,
+  onSwitchSection,
   cartBadgeCount,
   unreadMessagesCount,
   unreadMarketMessagesCount,
@@ -87,6 +89,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
                 if (!isLoggedIn) {
                   onOpenAuthModal();
                 } else {
+                  if (onSwitchSection) onSwitchSection('social');
                   onSelectTab('messages');
                 }
               }}
@@ -210,6 +213,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
                 if (!isLoggedIn) {
                   onOpenAuthModal();
                 } else {
+                  if (onSwitchSection) onSwitchSection('market');
                   onSelectTab('messages');
                 }
               }}

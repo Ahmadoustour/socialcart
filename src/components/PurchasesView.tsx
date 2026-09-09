@@ -8,7 +8,8 @@ import {
   Clock, 
   CheckCircle2, 
   ExternalLink,
-  Store
+  Store,
+  MessageSquare
 } from 'lucide-react';
 import { Order } from '../types';
 
@@ -18,6 +19,7 @@ interface PurchasesViewProps {
   onRateSeller: (order: Order) => void;
   onRequestRefund: (order: Order) => void;
   onExploreMarket: () => void;
+  onOpenDirectChat?: (username: string, displayName: string, avatar: string, productTitle?: string) => void;
 }
 
 export const PurchasesView: React.FC<PurchasesViewProps> = ({
@@ -25,7 +27,8 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({
   onDownloadFile,
   onRateSeller,
   onRequestRefund,
-  onExploreMarket
+  onExploreMarket,
+  onOpenDirectChat
 }) => {
   return (
     <div className="max-w-4xl mx-auto pb-16 animate-fadeIn">
@@ -153,6 +156,22 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({
                     <Download className="w-4 h-4" />
                     <span>تحميل الملف الرقمي</span>
                   </button>
+
+                  {/* Message Seller */}
+                  {onOpenDirectChat && (
+                    <button
+                      onClick={() => onOpenDirectChat(
+                        order.sellerUsername || 'ahmed_dev',
+                        order.sellerDisplayName || 'أحمد التقني',
+                        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
+                        order.productTitle
+                      )}
+                      className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1.5 transition"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>مراسلة البائع</span>
+                    </button>
+                  )}
 
                   {/* Rate Seller Button */}
                   <button

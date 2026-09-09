@@ -299,9 +299,10 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
                 {/* Contact Seller Inquiry */}
                 <button
                   onClick={() => onOpenDirectChat(product.seller.username, product.seller.displayName, product.seller.avatar, product.title)}
-                  className="w-full text-center text-[11px] text-indigo-600 dark:text-indigo-400 font-bold hover:underline py-0.5"
+                  className="w-full py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/60 hover:bg-slate-100 dark:bg-slate-800/50 dark:hover:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center justify-center gap-1.5 transition"
                 >
-                  💬 استفسر من البائع قبل الشراء
+                  <MessageSquare className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>الاستفسار والمراسلة الفورية للبائع</span>
                 </button>
 
               </div>

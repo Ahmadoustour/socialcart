@@ -390,11 +390,16 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
                         <img
                           src={comment.userAvatar}
                           alt={comment.username}
-                          className="w-7 h-7 rounded-lg object-cover ring-1 ring-slate-200 dark:ring-slate-700 mt-0.5"
+                          onClick={() => onOpenDirectChat(comment.username, comment.username, comment.userAvatar)}
+                          className="w-7 h-7 rounded-lg object-cover ring-1 ring-slate-200 dark:ring-slate-700 mt-0.5 cursor-pointer hover:opacity-80 transition"
+                          title={`مراسلة @${comment.username}`}
                         />
                         <div className="flex-1">
                           <div className="flex items-center justify-between">
-                            <span className="font-bold text-[11px] text-slate-800 dark:text-slate-200">
+                            <span 
+                              onClick={() => onOpenDirectChat(comment.username, comment.username, comment.userAvatar)}
+                              className="font-bold text-[11px] text-slate-800 dark:text-slate-200 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition"
+                            >
                               @{comment.username}
                             </span>
                             <span className="text-[10px] text-slate-400">{comment.createdAt}</span>

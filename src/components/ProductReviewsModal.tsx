@@ -6,12 +6,14 @@ interface ProductReviewsModalProps {
   isOpen: boolean;
   onClose: () => void;
   product: Product | null;
+  onOpenDirectChat?: (username: string, displayName: string, avatar: string, productTitle?: string) => void;
 }
 
 export const ProductReviewsModal: React.FC<ProductReviewsModalProps> = ({
   isOpen,
   onClose,
-  product
+  product,
+  onOpenDirectChat
 }) => {
   if (!isOpen || !product) return null;
 
@@ -107,12 +109,32 @@ export const ProductReviewsModal: React.FC<ProductReviewsModalProps> = ({
           )}
         </div>
 
-        <button
-          onClick={onClose}
-          className="mt-5 w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 font-bold py-2.5 rounded-xl text-xs transition text-slate-700 dark:text-slate-200"
-        >
-          إغلاق
-        </button>
+        <div className="flex flex-col sm:flex-row items-center gap-2 mt-5">
+          {onOpenDirectChat && (
+            <button
+              onClick={() => {
+                onClose();
+                onOpenDirectChat(
+                  product.seller.username,
+                  product.seller.displayName,
+                  product.seller.avatar,
+                  product.title
+                );
+              }}
+              className="w-full sm:flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-500/20"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>الاستفسار من البائع قبل الشراء</span>
+            </button>
+          )}
+
+          <button
+            onClick={onClose}
+            className="w-full sm:w-auto bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 font-bold py-2.5 px-5 rounded-xl text-xs transition text-slate-700 dark:text-slate-200"
+          >
+            إغلاق
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Search, 
   Send, 
@@ -20,9 +20,12 @@ interface MessagesHubProps {
   conversations: Conversation[];
   currentUser: User;
   mode: 'social' | 'market';
+  onSwitchMode?: (mode: 'social' | 'market') => void;
   onSendMessage: (conversationId: string, text: string, media?: MediaItem[]) => void;
   onStartNewConversation: (participantUsername: string, participantName: string, avatar: string, type: 'social' | 'market', initialMessage: string, productTitle?: string) => void;
   initialActiveConvId?: string;
+  onSelectConversation?: (convId: string) => void;
+  onBackToList?: () => void;
   onMarkConversationRead?: (conversationId: string) => void;
   onMarkAllConversationsRead?: (type?: 'social' | 'market') => void;
   onNavigateToMarket?: () => void;
@@ -36,28 +39,37 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
   onSendMessage,
   onStartNewConversation,
   initialActiveConvId,
+  onSelectConversation,
+  onBackToList,
   onMarkConversationRead,
   onMarkAllConversationsRead,
   onNavigateToMarket,
   onNavigateToFeed
 }) => {
-  // Only show conversations matching the current active section (social or market)
   const isMarket = mode === 'market';
-  const modeConversations = conversations.filter(c => c.type === mode);
+  // Strictly filter conversations by the current mode ONLY using useMemo
+  const modeConversations = useMemo(() => {
+    return conversations.filter(c => c.type === mode);
+  }, [conversations, mode]);
 
+  // Active conversation state:
   const [activeConvId, setActiveConvId] = useState<string>(() => {
     if (initialActiveConvId && modeConversations.some(c => c.id === initialActiveConvId)) {
       return initialActiveConvId;
     }
-    return modeConversations[0]?.id || '';
+    return '';
   });
 
+  const [showMobileChat, setShowMobileChat] = useState<boolean>(() => {
+    return Boolean(initialActiveConvId && modeConversations.some(c => c.id === initialActiveConvId));
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [messageInput, setMessageInput] = useState('');
   
   // Media attachment state in chat
   const [attachedMedia, setAttachedMedia] = useState<MediaItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // New Chat Modal
   const [showNewChatModal, setShowNewChatModal] = useState(false);
@@ -65,15 +77,34 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
   const [newChatProductTitle, setNewChatProductTitle] = useState('');
   const [newChatInitialText, setNewChatInitialText] = useState('');
 
-  // Auto-switch active conversation if not in current mode
-  useEffect(() => {
-    const currentMatches = modeConversations.some(c => c.id === activeConvId);
-    if (!currentMatches) {
-      setActiveConvId(modeConversations[0]?.id || '');
-    }
-  }, [mode, conversations]);
+  // Track previous initialActiveConvId and mode so we ONLY open mobile chat when a NEW initialActiveConvId is explicitly requested from outside
+  const prevInitialIdRef = useRef<string | undefined>(initialActiveConvId);
+  const prevModeRef = useRef<string>(mode);
 
-  // Mark all unread conversations of this section as read on mount
+  useEffect(() => {
+    const isNewInitialId = Boolean(initialActiveConvId && initialActiveConvId !== prevInitialIdRef.current);
+    const isModeChanged = mode !== prevModeRef.current;
+
+    prevInitialIdRef.current = initialActiveConvId;
+    prevModeRef.current = mode;
+
+    if (isNewInitialId && initialActiveConvId) {
+      if (modeConversations.some(c => c.id === initialActiveConvId)) {
+        setActiveConvId(initialActiveConvId);
+        setShowMobileChat(true);
+      }
+    } else if (isModeChanged) {
+      setShowMobileChat(false);
+      setActiveConvId('');
+    }
+  }, [mode, initialActiveConvId, modeConversations]);
+
+  // Scroll to bottom whenever messages or active conversation changes
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [activeConvId, conversations]);
+
+  // Mark all unread conversations of this section as read on mode change
   const onMarkAllRef = useRef(onMarkAllConversationsRead);
   useEffect(() => {
     onMarkAllRef.current = onMarkAllConversationsRead;
@@ -105,13 +136,34 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
     return matchSearch;
   });
 
-  const activeConversation = conversations.find(c => c.id === activeConvId);
+  // CRITICAL: activeConversation is strictly found ONLY in modeConversations!
+  const activeConversation = modeConversations.find(c => c.id === activeConvId);
+
+  const handleSelectConversation = (convId: string) => {
+    if (!modeConversations.some(c => c.id === convId)) return;
+    setActiveConvId(convId);
+    setShowMobileChat(true);
+    if (onSelectConversation) {
+      onSelectConversation(convId);
+    }
+    if (onMarkConversationRead) {
+      onMarkConversationRead(convId);
+    }
+  };
+
+  const handleBackToList = () => {
+    setShowMobileChat(false);
+    setActiveConvId('');
+    if (onBackToList) {
+      onBackToList();
+    }
+  };
 
   const handleSend = () => {
     if (!messageInput.trim() && attachedMedia.length === 0) return;
-    if (!activeConvId) return;
+    if (!activeConversation) return;
 
-    onSendMessage(activeConvId, messageInput.trim(), attachedMedia.length > 0 ? attachedMedia : undefined);
+    onSendMessage(activeConversation.id, messageInput.trim(), attachedMedia.length > 0 ? attachedMedia : undefined);
     setMessageInput('');
     setAttachedMedia([]);
   };
@@ -172,73 +224,77 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
   return (
     <div className="max-w-6xl mx-auto pb-16 animate-fadeIn">
       
-      {/* Header: Customized purely for Market or Social */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
-        <div className="flex items-start sm:items-center gap-3">
-          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
-            isMarket 
-              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' 
-              : 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20'
-          }`}>
-            {isMarket ? (
-              <Store className="w-6 h-6" />
-            ) : (
-              <MessageSquare className="w-6 h-6" />
-            )}
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
-                {isMarket ? 'رسائل واستفسارات المتجر' : 'المحادثات والرسائل الاجتماعية'}
-              </h2>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                isMarket 
-                  ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
-                  : 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
-              }`}>
-                {isMarket ? 'مخصصة للمتجر فقط' : 'محادثات مباشرة فقط'}
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {isMarket 
-                ? 'استفسارات المنتجات الرقمية، والتواصل بين المشترين والبائعين وحماية الضمان' 
-                : 'الرسائل والمحادثات المباشرة مع الأصدقاء والمبدعين وصناع المحتوى'}
-            </p>
-          </div>
-        </div>
-
-        {/* Actions for current section */}
-        <div className="flex items-center gap-2 self-end sm:self-center">
-          {unreadSectionCount > 0 && onMarkAllConversationsRead && (
-            <button
-              onClick={() => onMarkAllConversationsRead(mode)}
-              className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1.5 transition"
-              title="تحديد كل رسائل هذا القسم كمقروءة"
-            >
-              <CheckCheck className={`w-4 h-4 ${isMarket ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400'}`} />
-              <span className="hidden sm:inline">تحديد الكل كمقروء</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => setShowNewChatModal(true)}
-            className={`font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-sm text-white transition ${
+      {/* Header: Purely contextual for Market or Social with no annoying tab switchers */}
+      <div className="mb-5 bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
               isMarket 
-                ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20' 
-                : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20'
-            }`}
-          >
-            <Plus className="w-4 h-4" />
-            <span>{isMarket ? 'استفسار جديد في المتجر' : 'محادثة اجتماعية جديدة'}</span>
-          </button>
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' 
+                : 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20'
+            }`}>
+              {isMarket ? (
+                <Store className="w-6 h-6" />
+              ) : (
+                <MessageSquare className="w-6 h-6" />
+              )}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
+                  {isMarket ? 'استفسارات المتجر والمنتجات' : 'المحادثات الاجتماعية'}
+                </h2>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  isMarket 
+                    ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
+                    : 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
+                }`}>
+                  {isMarket ? '💡 محمية بضمان استرجاع الأموال' : '💬 محادثات خاصة ومباشرة'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                {isMarket 
+                  ? 'استفسارات المنتجات الرقمية والتواصل المباشر مع البائعين' 
+                  : 'الرسائل والمحادثات المباشرة مع الأصدقاء وصناع المحتوى في المجتمع'}
+              </p>
+            </div>
+          </div>
+
+          {/* Actions for current section */}
+          <div className="flex items-center gap-2 self-end sm:self-center">
+            {unreadSectionCount > 0 && onMarkAllConversationsRead && (
+              <button
+                onClick={() => onMarkAllConversationsRead(mode)}
+                className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1.5 transition"
+                title="تحديد كل رسائل هذا القسم كمقروءة"
+              >
+                <CheckCheck className={`w-4 h-4 ${isMarket ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400'}`} />
+                <span className="hidden sm:inline">تحديد الكل كمقروء</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => setShowNewChatModal(true)}
+              className={`font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-sm text-white transition ${
+                isMarket 
+                  ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20' 
+                  : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20'
+              }`}
+            >
+              <Plus className="w-4 h-4" />
+              <span>{isMarket ? 'استفسار جديد' : 'محادثة جديدة'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Main Container: Left Side (Conversation Cards) & Right Side (Chat View) */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden grid grid-cols-1 lg:grid-cols-12 min-h-[600px]">
+      {/* Main Container: Left Side (Cards) & Right Side (Chat View) */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden grid grid-cols-1 lg:grid-cols-12 min-h-[620px]">
         
-        {/* Left Col: Conversation Cards (Single Dedicated Section, No Mixed Tabs) */}
-        <div className="lg:col-span-4 border-l border-slate-200 dark:border-slate-800 flex flex-col bg-slate-50/40 dark:bg-slate-900/40">
+        {/* Left Col: Conversation Cards (Master List) */}
+        <div className={`lg:col-span-4 border-l border-slate-200 dark:border-slate-800 flex flex-col bg-slate-50/40 dark:bg-slate-900/40 ${
+          showMobileChat ? 'hidden lg:flex' : 'flex'
+        }`}>
           
           {/* Search bar */}
           <div className="p-3.5 border-b border-slate-200 dark:border-slate-800">
@@ -307,10 +363,7 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                 return (
                   <div
                     key={conv.id}
-                    onClick={() => {
-                      setActiveConvId(conv.id);
-                      if (onMarkConversationRead) onMarkConversationRead(conv.id);
-                    }}
+                    onClick={() => handleSelectConversation(conv.id)}
                     className={`p-3 rounded-2xl cursor-pointer transition border flex items-start gap-3 select-none ${
                       isActive 
                         ? (isMarket 
@@ -382,31 +435,44 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
         </div>
 
         {/* Right Col: Active Chat Thread View */}
-        <div className="lg:col-span-8 flex flex-col h-[600px] bg-white dark:bg-slate-900">
+        <div className={`lg:col-span-8 flex flex-col h-[620px] bg-white dark:bg-slate-900 ${
+          showMobileChat ? 'flex' : 'hidden lg:flex'
+        }`}>
           {activeConversation ? (
             <>
               {/* Chat Thread Header */}
-              <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/60">
-                <div className="flex items-center gap-3">
+              <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/60">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  {/* Back Button to return to list */}
+                  <button
+                    type="button"
+                    onClick={handleBackToList}
+                    className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition flex items-center gap-1.5 text-xs font-bold shrink-0"
+                    title="الرجوع إلى قائمة المحادثات"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                    <span>الرجوع</span>
+                  </button>
+
                   <img
                     src={activeConversation.participantAvatar}
                     alt={activeConversation.participantDisplayName}
-                    className="w-10 h-10 rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700"
+                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700 shrink-0"
                   />
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-sm text-slate-900 dark:text-white">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate">
                         {activeConversation.participantDisplayName}
                       </span>
                       {activeConversation.isVerified && (
-                        <BadgeCheck className="w-4 h-4 text-emerald-500" />
+                        <BadgeCheck className="w-4 h-4 text-emerald-500 shrink-0" />
                       )}
-                      <span className="text-xs text-slate-400 font-normal">
+                      <span className="text-[11px] text-slate-400 font-normal hidden sm:inline">
                         (@{activeConversation.participantUsername})
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2 text-[11px]">
+                    <div className="flex items-center gap-2 text-[10px] sm:text-[11px]">
                       <span className="text-emerald-600 dark:text-emerald-400 font-medium">● متصل الآن</span>
                       {isMarket ? (
                         <span className="bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded-md font-bold text-[10px]">
@@ -423,62 +489,105 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
 
                 <div className="text-left text-xs">
                   {isMarket && activeConversation.relatedProductTitle && (
-                    <span className="hidden sm:inline-block text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-xl border border-emerald-200 dark:border-emerald-800/80">
+                    <span className="hidden sm:inline-block text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-xl border border-emerald-200 dark:border-emerald-800/80 max-w-[220px] truncate">
                       {activeConversation.relatedProductTitle}
                     </span>
                   )}
                 </div>
               </div>
 
-              {/* Messages Bubbles Area */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50/30 dark:bg-slate-950/30">
-                {activeConversation.messages.map(msg => (
-                  <div
-                    key={msg.id}
-                    className={`flex items-start gap-2.5 max-w-[80%] ${
-                      msg.isMe ? 'mr-auto flex-row-reverse' : 'ml-auto'
-                    }`}
-                  >
-                    <img
-                      src={msg.senderAvatar}
-                      alt={msg.senderUsername}
-                      className="w-7 h-7 rounded-lg object-cover ring-1 ring-slate-200 dark:ring-slate-700 mt-0.5"
-                    />
-
-                    <div className="space-y-1">
-                      <div
-                        className={`p-3 rounded-2xl text-xs leading-relaxed shadow-xs ${
-                          msg.isMe
-                            ? (isMarket 
-                                ? 'bg-emerald-600 text-white rounded-tr-none' 
-                                : 'bg-indigo-600 text-white rounded-tr-none')
-                            : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-tl-none'
-                        }`}
-                      >
-                        <p>{msg.text}</p>
-
-                        {/* Media items */}
-                        {msg.media && msg.media.length > 0 && (
-                          <div className="mt-2 space-y-2">
-                            {msg.media.map(m => (
-                              <div key={m.id} className="rounded-xl overflow-hidden border border-white/20">
-                                {m.type === 'video' ? (
-                                  <video src={m.url} controls className="w-full max-h-48 rounded-lg bg-black" />
-                                ) : (
-                                  <img src={m.url} alt={m.caption || ''} className="w-full max-h-48 object-cover" />
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <span className={`text-[9px] text-slate-400 block px-1 ${msg.isMe ? 'text-left' : 'text-right'}`}>
-                        {msg.createdAt}
+              {/* Contextual Product Inquiry Banner if in Market mode with product title */}
+              {isMarket && activeConversation.relatedProductTitle && (
+                <div className="mx-3 sm:mx-4 mt-3 p-3 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/80 flex items-center justify-between gap-3 text-xs shadow-xs">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                      <PackageCheck className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 block">
+                        موضوع الاستفسار الحالي:
                       </span>
+                      <h4 className="font-bold text-slate-800 dark:text-slate-100 truncate text-xs">
+                        {activeConversation.relatedProductTitle}
+                      </h4>
                     </div>
                   </div>
-                ))}
+                  <span className="shrink-0 text-[10px] bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 font-bold px-2 py-1 rounded-lg">
+                    حماية المشتري مفعلة 🛡️
+                  </span>
+                </div>
+              )}
+
+              {/* Messages Bubbles Area */}
+              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50/30 dark:bg-slate-950/30">
+                {activeConversation.messages.length === 0 ? (
+                  <div className="h-full min-h-[260px] flex flex-col items-center justify-center text-center p-6 my-auto text-slate-400">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-3 ${
+                      isMarket 
+                        ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400' 
+                        : 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400'
+                    }`}>
+                      {isMarket ? <Store className="w-6 h-6" /> : <MessageSquare className="w-6 h-6" />}
+                    </div>
+                    <h4 className="font-bold text-slate-800 dark:text-slate-200 text-xs sm:text-sm mb-1">
+                      {isMarket ? 'بدء استفسار جديد بخصوص المنتج' : 'بدء محادثة مباشرة جديدة'}
+                    </h4>
+                    <p className="text-[11px] text-slate-500 max-w-xs">
+                      {isMarket 
+                        ? `لا توجد رسائل سابقة. يمكنك كتابة استفسارك للبائع "${activeConversation.participantDisplayName}" بالأسفل وإرساله مباشرة.` 
+                        : `لا توجد رسائل سابقة. ابدأ المحادثة بكتابة رسالتك في الصندوق بالأسفل.`}
+                    </p>
+                  </div>
+                ) : (
+                  activeConversation.messages.map(msg => (
+                    <div
+                      key={msg.id}
+                      className={`flex items-start gap-2.5 max-w-[80%] ${
+                        msg.isMe ? 'mr-auto flex-row-reverse' : 'ml-auto'
+                      }`}
+                    >
+                      <img
+                        src={msg.senderAvatar}
+                        alt={msg.senderUsername}
+                        className="w-7 h-7 rounded-lg object-cover ring-1 ring-slate-200 dark:ring-slate-700 mt-0.5"
+                      />
+
+                      <div className="space-y-1">
+                        <div
+                          className={`p-3 rounded-2xl text-xs leading-relaxed shadow-xs ${
+                            msg.isMe
+                              ? (isMarket 
+                                  ? 'bg-emerald-600 text-white rounded-tr-none' 
+                                  : 'bg-indigo-600 text-white rounded-tr-none')
+                              : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-tl-none'
+                          }`}
+                        >
+                          <p>{msg.text}</p>
+
+                          {/* Media items */}
+                          {msg.media && msg.media.length > 0 && (
+                            <div className="mt-2 space-y-2">
+                              {msg.media.map(m => (
+                                <div key={m.id} className="rounded-xl overflow-hidden border border-white/20">
+                                  {m.type === 'video' ? (
+                                    <video src={m.url} controls className="w-full max-h-48 rounded-lg bg-black" />
+                                  ) : (
+                                    <img src={m.url} alt={m.caption || ''} className="w-full max-h-48 object-cover" />
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <span className={`text-[9px] text-slate-400 block px-1 ${msg.isMe ? 'text-left' : 'text-right'}`}>
+                          {msg.createdAt}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div ref={messagesEndRef} />
               </div>
 
               {/* Attached preview before sending */}

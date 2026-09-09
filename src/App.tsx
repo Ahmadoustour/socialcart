@@ -62,6 +62,8 @@ export default function App() {
     { product: INITIAL_PRODUCTS[0], quantity: 1 }
   ]);
   const [conversations, setConversations] = useState<Conversation[]>(INITIAL_CONVERSATIONS);
+  const [selectedSocialConvId, setSelectedSocialConvId] = useState<string | null>(null);
+  const [selectedMarketConvId, setSelectedMarketConvId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
 
   // Registered users for uniqueness checks
@@ -468,6 +470,7 @@ export default function App() {
           ...c,
           lastMessage: text || (media?.length ? 'ملف وسائط مرفق' : ''),
           lastMessageTime: 'الآن',
+          unreadCount: 0,
           messages: [...c.messages, newMsg]
         };
       }
@@ -480,65 +483,158 @@ export default function App() {
     participantDisplayName: string,
     participantAvatar: string,
     type: 'social' | 'market',
-    initialMessage: string,
+    initialMessage?: string,
     productTitle?: string
   ) => {
-    const existing = conversations.find(c => c.participantUsername === participantUsername);
+    // Switch active section to match target conversation type
+    setActiveSection(type);
+
+    const cleanUsername = participantUsername.replace(/^@/, '').trim();
+    // Strictly find matching conversation of the EXACT same type
+    const existing = conversations.find(
+      c => c.participantUsername.toLowerCase() === cleanUsername.toLowerCase() && c.type === type
+    );
+
     if (existing) {
-      handleSendMessage(existing.id, initialMessage);
+      if (initialMessage && initialMessage.trim()) {
+        handleSendMessage(existing.id, initialMessage.trim());
+      }
+      if (productTitle && existing.relatedProductTitle !== productTitle) {
+        setConversations(prev => prev.map(c => c.id === existing.id ? { ...c, relatedProductTitle: productTitle, type } : c));
+      }
+      if (type === 'market') {
+        setSelectedMarketConvId(existing.id);
+      } else {
+        setSelectedSocialConvId(existing.id);
+      }
+      handleMarkConversationRead(existing.id);
       setActiveTab('messages');
       return;
     }
 
+    const newConvId = `conv_${Date.now()}`;
+    const trimmedMessage = initialMessage?.trim();
     const newConv: Conversation = {
-      id: `conv_${Date.now()}`,
-      participantId: `usr_${participantUsername}`,
-      participantUsername,
+      id: newConvId,
+      participantId: `usr_${cleanUsername}`,
+      participantUsername: cleanUsername,
       participantDisplayName,
       participantAvatar,
       isVerified: true,
       type,
-      relatedProductTitle: productTitle,
-      lastMessage: initialMessage,
+      relatedProductTitle: type === 'market' ? productTitle : undefined,
+      lastMessage: trimmedMessage || (type === 'market' && productTitle ? `استفسار: ${productTitle}` : (type === 'market' ? 'استفسار جديد في المتجر' : 'محادثة اجتماعية جديدة')),
       lastMessageTime: 'الآن',
       unreadCount: 0,
-      messages: [
-        {
-          id: `msg_init_${Date.now()}`,
-          senderId: currentUser.id,
-          senderUsername: currentUser.username,
-          senderAvatar: currentUser.avatar,
-          text: initialMessage,
-          createdAt: 'الآن',
-          isMe: true
-        }
-      ]
+      messages: trimmedMessage
+        ? [
+            {
+              id: `msg_init_${Date.now()}`,
+              senderId: currentUser.id,
+              senderUsername: currentUser.username,
+              senderAvatar: currentUser.avatar,
+              text: trimmedMessage,
+              createdAt: 'الآن',
+              isMe: true
+            }
+          ]
+        : []
     };
 
     setConversations(prev => [newConv, ...prev]);
+    if (type === 'market') {
+      setSelectedMarketConvId(newConvId);
+    } else {
+      setSelectedSocialConvId(newConvId);
+    }
     setActiveTab('messages');
   };
 
-  const handleOpenDirectChat = (username: string, displayName: string, avatar: string, productTitle?: string) => {
-    const existing = conversations.find(c => c.participantUsername === username);
+  const handleOpenDirectChat = (
+    username: string, 
+    displayName: string, 
+    avatar: string, 
+    productTitle?: string
+  ) => {
+    if (!isLoggedIn) {
+      setIsAuthModalOpen(true);
+      return;
+    }
+
+    // A chat opened with a productTitle is a store/market inquiry.
+    // A chat opened without productTitle (from Social Feed, author profile, comments, stories) is strictly SOCIAL!
+    const targetType: 'social' | 'market' = productTitle ? 'market' : 'social';
+    setActiveSection(targetType);
+
+    const cleanUsername = username.replace(/^@/, '').trim();
+    
+    // Find conversation strictly matching targetType.
+    // NEVER allow a social chat action to redirect or match a marketplace store inquiry!
+    const existing = targetType === 'market'
+      ? (
+          conversations.find(
+            c => c.participantUsername.toLowerCase() === cleanUsername.toLowerCase() && 
+                 c.type === 'market' && 
+                 productTitle && c.relatedProductTitle === productTitle
+          ) ||
+          conversations.find(
+            c => c.participantUsername.toLowerCase() === cleanUsername.toLowerCase() && 
+                 c.type === 'market'
+          )
+        )
+      : conversations.find(
+          c => c.participantUsername.toLowerCase() === cleanUsername.toLowerCase() && 
+               c.type === 'social'
+        );
+
     if (existing) {
+      if (productTitle && existing.relatedProductTitle !== productTitle) {
+        setConversations(prev => prev.map(c => c.id === existing.id ? { ...c, relatedProductTitle: productTitle, type: 'market' } : c));
+      }
+      if (targetType === 'market') {
+        setSelectedMarketConvId(existing.id);
+      } else {
+        setSelectedSocialConvId(existing.id);
+      }
+      handleMarkConversationRead(existing.id);
       setActiveTab('messages');
       return;
     }
 
+    // Start completely clean conversation of the target type without sending any random/automated message
     handleStartNewConversation(
-      username,
+      cleanUsername,
       displayName,
       avatar,
-      productTitle ? 'market' : 'social',
-      productTitle ? `مرحباً ${displayName}، أود الاستفسار عن منتجك: "${productTitle}"` : `مرحباً ${displayName}، سررت بالتواصل معك!`,
-      productTitle
+      targetType,
+      '',
+      targetType === 'market' ? productTitle : undefined
     );
   };
 
   // 8. Profile Update Handler
   const handleUpdateProfile = (updated: Partial<User>) => {
-    setCurrentUser(prev => ({ ...prev, ...updated }));
+    setCurrentUser(prev => {
+      const nextUser = { ...prev, ...updated };
+      return nextUser;
+    });
+
+    if (updated.avatar || updated.displayName || updated.username) {
+      setPosts(prevPosts => prevPosts.map(post => {
+        if (post.author.id === currentUser.id || post.author.username === currentUser.username) {
+          return {
+            ...post,
+            author: {
+              ...post.author,
+              displayName: updated.displayName || post.author.displayName,
+              username: updated.username || post.author.username,
+              avatar: updated.avatar || post.author.avatar,
+            }
+          };
+        }
+        return post;
+      }));
+    }
   };
 
   return (
@@ -633,16 +729,41 @@ export default function App() {
           />
         )}
 
-        {/* TAB: Messages Hub (Boxes per person + Old messages history) */}
+        {/* TAB: Messages Hub (Separated per section: Social vs Market) */}
         {activeTab === 'messages' && (
           isLoggedIn ? (
             <MessagesHub
               conversations={conversations}
               currentUser={currentUser}
+              mode={activeSection}
               onSendMessage={handleSendMessage}
               onStartNewConversation={handleStartNewConversation}
+              initialActiveConvId={(activeSection === 'market' ? selectedMarketConvId : selectedSocialConvId) || undefined}
+              onSelectConversation={(convId) => {
+                if (activeSection === 'market') {
+                  setSelectedMarketConvId(convId);
+                } else {
+                  setSelectedSocialConvId(convId);
+                }
+                handleMarkConversationRead(convId);
+              }}
+              onBackToList={() => {
+                if (activeSection === 'market') {
+                  setSelectedMarketConvId(null);
+                } else {
+                  setSelectedSocialConvId(null);
+                }
+              }}
               onMarkConversationRead={handleMarkConversationRead}
               onMarkAllConversationsRead={handleMarkAllConversationsRead}
+              onNavigateToMarket={() => {
+                setActiveSection('market');
+                setActiveTab('marketplace');
+              }}
+              onNavigateToFeed={() => {
+                setActiveSection('social');
+                setActiveTab('feed');
+              }}
             />
           ) : (
             <div className="max-w-md mx-auto my-14 p-8 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl text-center animate-fadeIn">
@@ -732,6 +853,7 @@ export default function App() {
                 setActiveSection('market');
                 setActiveTab('marketplace');
               }}
+              onOpenDirectChat={handleOpenDirectChat}
             />
           ) : (
             <div className="max-w-md mx-auto my-14 p-8 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl text-center animate-fadeIn">
@@ -811,8 +933,10 @@ export default function App() {
         activeSection={activeSection}
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
+        onSwitchSection={(section) => setActiveSection(section)}
         cartBadgeCount={cartBadgeCount}
-        unreadMessagesCount={unreadMessagesCount}
+        unreadMessagesCount={unreadSocialMessagesCount}
+        unreadMarketMessagesCount={unreadMarketMessagesCount}
         onOpenCreateModal={() => {
           if (!isLoggedIn) {
             setIsAuthModalOpen(true);
@@ -874,6 +998,7 @@ export default function App() {
         isOpen={!!reviewsTargetProduct}
         onClose={() => setReviewsTargetProduct(null)}
         product={reviewsTargetProduct}
+        onOpenDirectChat={handleOpenDirectChat}
       />
 
       {/* 7. Authentication Modal (Login / Register / Quick Demo Login) */}
