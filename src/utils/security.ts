@@ -4,10 +4,39 @@
  * Escrow guarantee calculation, and Cloudflare status.
  */
 
-// 1. Credit Card Luhn Algorithm Validator
-export function validateCreditCardNumber(cardNumber: string): { isValid: boolean; cardType: 'visa' | 'mastercard' | 'unknown'; formatted: string } {
+// Known fake, dummy, and test card numbers to reject
+const KNOWN_DUMMY_CARDS = new Set([
+  '4242424242424242',
+  '4111111111111111',
+  '4000000000000002',
+  '4000000000000000',
+  '4012888888881881',
+  '5555555555554444',
+  '5105105105105100',
+  '5454545454545454',
+  '4343434343434343',
+  '4545454545454545'
+]);
+
+// 1. Credit Card Luhn Algorithm Validator with Anti-Fraud / Anti-Dummy Verification
+export function validateCreditCardNumber(cardNumber: string): { 
+  isValid: boolean; 
+  cardType: 'visa' | 'mastercard' | 'unknown'; 
+  formatted: string;
+  errorMessage?: string;
+} {
   const sanitized = cardNumber.replace(/\D/g, '');
-  
+  const formatted = formatCardNumber(sanitized);
+
+  if (!sanitized || sanitized.length === 0) {
+    return { isValid: false, cardType: 'unknown', formatted, errorMessage: 'يرجى إدخال رقم البطاقة.' };
+  }
+
+  // Must be standard 16 digits for Visa and Mastercard
+  if (sanitized.length !== 16) {
+    return { isValid: false, cardType: 'unknown', formatted, errorMessage: 'رقم البطاقة يجب أن يتكون من 16 رقماً بالتمام.' };
+  }
+
   let cardType: 'visa' | 'mastercard' | 'unknown' = 'unknown';
   if (/^4/.test(sanitized)) {
     cardType = 'visa';
@@ -15,11 +44,27 @@ export function validateCreditCardNumber(cardNumber: string): { isValid: boolean
     cardType = 'mastercard';
   }
 
-  if (sanitized.length < 13 || sanitized.length > 19) {
-    return { isValid: false, cardType, formatted: formatCardNumber(sanitized) };
+  if (cardType === 'unknown') {
+    return { isValid: false, cardType, formatted, errorMessage: 'نوع البطاقة غير مدعوم. المنصة تقبل فقط بطاقات Visa و MasterCard الصادرة من البنوك.' };
   }
 
-  // Luhn check
+  // Reject known test and mock card numbers
+  if (KNOWN_DUMMY_CARDS.has(sanitized)) {
+    return { isValid: false, cardType, formatted, errorMessage: 'تم رفض البطاقة: هذا رقم تجريبي/وهمي شهير (Test Card). يجب إدخال رقم بطاقة بنكية حقيقية.' };
+  }
+
+  // Reject repeating patterns (e.g. 42424242... or all same digits)
+  const uniqueDigits = new Set(sanitized.split(''));
+  if (uniqueDigits.size <= 2) {
+    return { isValid: false, cardType, formatted, errorMessage: 'رقم البطاقة غير صالح ويحتوي على أرقام وهمية متكررة.' };
+  }
+
+  // Reject 4-digit repeating blocks (e.g. 4242 4242 4242 4242)
+  if (sanitized.slice(0, 4).repeat(4) === sanitized) {
+    return { isValid: false, cardType, formatted, errorMessage: 'رقم البطاقة غير صالح ومكرر (نمط وهمي).' };
+  }
+
+  // Standard Luhn checksum algorithm
   let sum = 0;
   let shouldDouble = false;
   for (let i = sanitized.length - 1; i >= 0; i--) {
@@ -34,16 +79,39 @@ export function validateCreditCardNumber(cardNumber: string): { isValid: boolean
     shouldDouble = !shouldDouble;
   }
 
-  const isValid = (sum % 10 === 0) && (cardType !== 'unknown');
-  return { isValid, cardType, formatted: formatCardNumber(sanitized) };
+  if (sum % 10 !== 0) {
+    return { isValid: false, cardType, formatted, errorMessage: 'رقم البطاقة غير صحيح (فشل فحص Luhn المصرفي المعياري).' };
+  }
+
+  return { isValid: true, cardType, formatted };
 }
 
 export function formatCardNumber(sanitized: string): string {
   return sanitized.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
 }
 
+export function validateCardHolder(name: string): { isValid: boolean; errorMessage?: string } {
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length < 5) {
+    return { isValid: false, errorMessage: 'يرجى كتابة الاسم الثلاثي أو الثنائي كما هو مطبوع على البطاقة (5 أحرف على الأقل).' };
+  }
+
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length < 2) {
+    return { isValid: false, errorMessage: 'يرجى كتابة الاسم الأول واسم العائلة كما هو على البطاقة.' };
+  }
+
+  const lower = trimmed.toLowerCase();
+  const fakeKeywords = ['test', 'fake', 'dummy', 'name surname', 'card holder', 'user', 'demo', 'asdf', 'admin'];
+  if (fakeKeywords.some(kw => lower.includes(kw))) {
+    return { isValid: false, errorMessage: 'اسم حامل البطاقة غير حقيقي. يرجى إدخال اسمك الشخصي المطبوع على البطاقة.' };
+  }
+
+  return { isValid: true };
+}
+
 export function validateCardExpiry(expiry: string): boolean {
-  if (!/^(0[1-9]|1[0-2])\/?([0-9]{2})$/.test(expiry)) {
+  if (!/^(0[1-9]|1[0-2])\/?([0-9]{2})$/.test(expiry.trim())) {
     return false;
   }
   const parts = expiry.split('/');
@@ -56,11 +124,20 @@ export function validateCardExpiry(expiry: string): boolean {
 
   if (year < currentYear) return false;
   if (year === currentYear && month < currentMonth) return false;
+  // Expire should not be more than 10 years in the future
+  if (year > currentYear + 10) return false;
   return true;
 }
 
 export function validateCardCVV(cvv: string): boolean {
-  return /^[0-9]{3,4}$/.test(cvv.trim());
+  const trimmed = cvv.trim();
+  if (!/^[0-9]{3,4}$/.test(trimmed)) {
+    return false;
+  }
+  if (trimmed === '000') {
+    return false;
+  }
+  return true;
 }
 
 // 2. Security scanner for media, links, and downloads

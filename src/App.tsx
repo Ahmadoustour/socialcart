@@ -39,7 +39,7 @@ const GUEST_USER: User = {
   avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
   joinedDate: '2026',
   isVerifiedSeller: false,
-  sellerRating: 5.0,
+  sellerRating: 0,
   sellerReviewsCount: 0,
   totalSales: 0,
   trustScore: 100,
@@ -83,6 +83,9 @@ export default function App() {
         const u = JSON.parse(saved);
         if (u.username === 'ahmed_dev' || u.id === 'usr_me' || !u.id || u.id === 'guest') {
           return GUEST_USER;
+        }
+        if (!u.sellerReviewsCount || u.sellerReviewsCount === 0) {
+          u.sellerRating = 0;
         }
         return u;
       } catch (e) {
@@ -211,7 +214,7 @@ export default function App() {
           avatar: fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
           joinedDate: 'سبتمبر 2026',
           isVerifiedSeller: false,
-          sellerRating: 5.0,
+          sellerRating: 0,
           sellerReviewsCount: 0,
           totalSales: 0,
           trustScore: 100,

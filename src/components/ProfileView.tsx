@@ -28,7 +28,7 @@ import {
   Shield
 } from 'lucide-react';
 import { User, SavedCard } from '../types';
-import { validateCreditCardNumber, validateCardExpiry, validateCardCVV, formatCardNumber } from '../utils/security';
+import { validateCreditCardNumber, validateCardExpiry, validateCardCVV, formatCardNumber, validateCardHolder } from '../utils/security';
 
 const PRESET_AVATARS = [
   { id: 'av_1', label: 'مطور ومبرمج', url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=250&auto=format&fit=crop&q=80' },
@@ -111,16 +111,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [sentOtpCode, setSentOtpCode] = useState('123456');
   const [otpServerMsg, setOtpServerMsg] = useState<string | null>(null);
 
-  // Two-Factor Authentication (2FA) State
-  const [twoFactorActive, setTwoFactorActive] = useState(Boolean(currentUser.twoFactorEnabled));
-  const [showTwoFactorModal, setShowTwoFactorModal] = useState(false);
-  const [twoFactorSuccessMsg, setTwoFactorSuccessMsg] = useState<string | null>(null);
-
   // Card Tab State
-  const [rawCardNumber, setRawCardNumber] = useState(currentUser.savedCard?.cardNumber || '4242 4242 4242 4242');
-  const [cardHolder, setCardHolder] = useState(currentUser.savedCard?.cardHolder || currentUser.displayName.toUpperCase());
-  const [expiry, setExpiry] = useState(currentUser.savedCard?.expiry || '12/28');
-  const [cvv, setCvv] = useState('123');
+  const [rawCardNumber, setRawCardNumber] = useState(currentUser.savedCard?.cardNumber || '');
+  const [cardHolder, setCardHolder] = useState(currentUser.savedCard?.cardHolder || '');
+  const [expiry, setExpiry] = useState(currentUser.savedCard?.expiry || '');
+  const [cvv, setCvv] = useState('');
   const [cardSuccess, setCardSuccess] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
 
@@ -251,18 +246,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setSecurityError(null);
     setSecuritySuccess(false);
 
-    // 1. Strict verification of old password!
-    const currentPass = currentUser.password || 'Password123!';
-    if (oldPassword !== currentPass) {
-      setSecurityError('كلمة المرور الحالية غير صحيحة! لا يمكن تغيير كلمة المرور إلا بإدخال كلمة المرور السابقة الصحيحة لحماية حسابك من الاختراق.');
-      return;
+    // If user already has an existing password, verify old password
+    const hasExistingPassword = Boolean(currentUser.password);
+    if (hasExistingPassword) {
+      if (!oldPassword || oldPassword !== currentUser.password) {
+        setSecurityError('كلمة المرور الحالية غير صحيحة! يرجى إدخال كلمة المرور السابقة لتأكيد هويتك.');
+        return;
+      }
     }
 
     if (newPassword.length < 6) {
       setSecurityError('كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل.');
       return;
     }
-    if (newPassword === oldPassword) {
+    if (hasExistingPassword && newPassword === oldPassword) {
       setSecurityError('كلمة المرور الجديدة لا يمكن أن تكون مطابقة لكلمة المرور الحالية.');
       return;
     }
@@ -330,36 +327,35 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }, 1500);
   };
 
-  const handleToggle2FA = () => {
-    const nextState = !twoFactorActive;
-    setTwoFactorActive(nextState);
-    onUpdateProfile({ twoFactorEnabled: nextState });
-    setTwoFactorSuccessMsg(nextState ? 'تم تفعيل المصادقة الثنائية (2FA) بنجاح وحماية المحفظة والحساب 🛡️' : 'تم تعطيل المصادقة الثنائية.');
-    setTimeout(() => setTwoFactorSuccessMsg(null), 3500);
-  };
-
-  // Save and Validate Credit Card
+  // Save and Validate Credit Card with strict anti-dummy validation
   const handleSaveCard = (e: React.FormEvent) => {
     e.preventDefault();
     setCardError(null);
     setCardSuccess(false);
 
-    // 1. Validate Card Number with Luhn Algorithm
+    // 1. Validate Card Number with Luhn Algorithm & anti-dummy check
     const cardValidation = validateCreditCardNumber(rawCardNumber);
     if (!cardValidation.isValid) {
-      setCardError('رقم بطاقة الفيزا / ماستركارد غير صحيح أو فشل في فحص Luhn المصرفي.');
+      setCardError(cardValidation.errorMessage || 'رقم بطاقة الفيزا / ماستركارد غير صحيح أو فشل في فحص Luhn المصرفي.');
       return;
     }
 
-    // 2. Validate Expiry Date
+    // 2. Validate Cardholder Name
+    const holderValidation = validateCardHolder(cardHolder);
+    if (!holderValidation.isValid) {
+      setCardError(holderValidation.errorMessage || 'يرجى كتابة الاسم الثلاثي أو الثنائي كما هو مطبوع على البطاقة.');
+      return;
+    }
+
+    // 3. Validate Expiry Date
     if (!validateCardExpiry(expiry)) {
       setCardError('تاريخ انتهاء صلاحية البطاقة غير صالح أو منتهي الصلاحية (MM/YY).');
       return;
     }
 
-    // 3. Validate CVV
+    // 4. Validate CVV
     if (!validateCardCVV(cvv)) {
-      setCardError('رمز الأمان CVV يجب أن يتكون من 3 أو 4 أرقام.');
+      setCardError('رمز الأمان CVV غير صالح (يجب أن يتكون من 3 أرقام بنكية صحيحة).');
       return;
     }
 
@@ -380,6 +376,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setTimeout(() => setCardSuccess(false), 3000);
   };
 
+  const handleRemoveCard = () => {
+    onUpdateProfile({ savedCard: undefined });
+    setRawCardNumber('');
+    setCardHolder('');
+    setExpiry('');
+    setCvv('');
+    setCardSuccess(false);
+    setCardError(null);
+  };
+
   return (
     <div className="max-w-4xl mx-auto pb-16 animate-fadeIn space-y-6">
       
@@ -389,7 +395,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         <div className="h-36 bg-gradient-to-r from-indigo-700 via-indigo-600 to-emerald-600 relative">
           <div className="absolute top-3 left-3 bg-black/40 backdrop-blur-md text-white text-[11px] font-bold px-3 py-1 rounded-full flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>حساب موثق ومحمي 100%</span>
+            <span>حساب موثق</span>
           </div>
         </div>
 
@@ -432,17 +438,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="flex items-center gap-2">
               <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200/70 dark:border-amber-900/70 px-3 py-1.5 rounded-xl text-center">
                 <span className="text-[10px] text-amber-700 dark:text-amber-400 font-bold block">تقييمك كبائع</span>
-                <span className="text-sm font-black text-amber-600 dark:text-amber-400 flex items-center justify-center gap-1">
-                  <Star className="w-3.5 h-3.5 fill-amber-400" />
-                  {currentUser.sellerRating}
-                </span>
-              </div>
-
-              <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-900/70 px-3 py-1.5 rounded-xl text-center">
-                <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold block">نسبة الأمان</span>
-                <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">
-                  {currentUser.trustScore}%
-                </span>
+                {currentUser.sellerReviewsCount && currentUser.sellerReviewsCount > 0 ? (
+                  <span className="text-sm font-black text-amber-600 dark:text-amber-400 flex items-center justify-center gap-1">
+                    <Star className="w-3.5 h-3.5 fill-amber-400" />
+                    {currentUser.sellerRating}
+                  </span>
+                ) : (
+                  <span className="text-xs font-bold text-slate-400 mt-0.5 block">
+                    لا توجد تقييمات
+                  </span>
+                )}
               </div>
 
               {onLogout && (
@@ -669,17 +674,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
 
           <form onSubmit={handleSaveSecurity} className="space-y-4 text-xs max-w-lg">
-            <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">كلمة المرور الحالية:</label>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={oldPassword}
-                onChange={(e) => setOldPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-                required
-              />
-            </div>
+            {Boolean(currentUser.password) ? (
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">كلمة المرور الحالية:</label>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                  required
+                />
+              </div>
+            ) : (
+              <div className="p-3 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900 rounded-xl text-indigo-800 dark:text-indigo-300 text-xs">
+                ℹ️ تم تسجيل حسابك عبر <strong>Google</strong>؛ يمكنك تعيين كلمة مرور جديدة ومباشرة لحسابك دون الحاجة لكلمة مرور سابقة.
+              </div>
+            )}
 
             <div>
               <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">كلمة المرور الجديدة:</label>
@@ -742,7 +753,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             {securitySuccess && (
               <div className="p-3 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-900 rounded-xl text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
                 <Check className="w-4 h-4 shrink-0" />
-                <span>تم تحديث كلمة المرور بنجاح!</span>
+                <span>تم حفظ كلمة المرور بنجاح!</span>
               </div>
             )}
 
@@ -751,7 +762,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-2.5 rounded-xl shadow-md transition flex items-center gap-1.5"
             >
               <KeyRound className="w-4 h-4" />
-              <span>تحديث كلمة المرور</span>
+              <span>{Boolean(currentUser.password) ? 'تحديث كلمة المرور' : 'تعيين كلمة المرور'}</span>
             </button>
           </form>
 
@@ -798,76 +809,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 </button>
               </div>
             )}
-          </div>
-
-          {/* Section 3: Two-Factor Authentication (2FA) */}
-          <div className="pt-6 border-t border-slate-100 dark:border-slate-800 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                  <Smartphone className="w-4 h-4 text-emerald-500" />
-                  <span>المصادقة الثنائية (Two-Factor Authentication - 2FA)</span>
-                </h4>
-                <p className="text-[11px] text-slate-400">
-                  طلب رمز تحقق إضافي مؤقت عند تسجيل الدخول أو إتمام مشتريات مالية كبرى
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleToggle2FA}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  twoFactorActive ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'
-                }`}
-                title={twoFactorActive ? 'تعطيل المصادقة الثنائية' : 'تفعيل المصادقة الثنائية'}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                    twoFactorActive ? '-translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
-
-            {twoFactorSuccessMsg && (
-              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
-                <Check className="w-4 h-4" />
-                <span>{twoFactorSuccessMsg}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Section 4: Cloudflare & Platform Security Metrics */}
-          <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
-            <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                  <span>حالة جدار الحماية والتشفير السحابي</span>
-                </span>
-                <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-md">
-                  نشط 100%
-                </span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] text-slate-500 dark:text-slate-400">
-                <div className="p-2 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
-                  <span className="block text-slate-400">تشفير البيانات</span>
-                  <span className="font-bold text-slate-700 dark:text-slate-200">SSL / TLS 1.3</span>
-                </div>
-                <div className="p-2 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
-                  <span className="block text-slate-400">حماية الهجمات</span>
-                  <span className="font-bold text-slate-700 dark:text-slate-200">DDoS Shield</span>
-                </div>
-                <div className="p-2 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
-                  <span className="block text-slate-400">جدار التطبيقات</span>
-                  <span className="font-bold text-slate-700 dark:text-slate-200">WAF Active</span>
-                </div>
-                <div className="p-2 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
-                  <span className="block text-slate-400">الضمان المالي</span>
-                  <span className="font-bold text-emerald-600 dark:text-emerald-400">Escrow Vault</span>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Email OTP Verification Modal */}
@@ -1015,6 +956,29 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
             {/* Right: Card Details Form */}
             <div className="lg:col-span-7">
+              {currentUser.savedCard && (
+                <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    <div>
+                      <p className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                        توجد بطاقة محفوظة: {currentUser.savedCard.cardNumber}
+                      </p>
+                      <p className="text-[10px] text-emerald-600 dark:text-emerald-400">
+                        حامل البطاقة: {currentUser.savedCard.cardHolder}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemoveCard}
+                    className="px-3 py-1.5 bg-rose-100 hover:bg-rose-200 dark:bg-rose-950 dark:hover:bg-rose-900 text-rose-700 dark:text-rose-300 rounded-xl text-xs font-bold transition"
+                  >
+                    حذف البطاقة
+                  </button>
+                </div>
+              )}
+
               <form onSubmit={handleSaveCard} className="space-y-4 text-xs">
                 <div>
                   <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
@@ -1029,7 +993,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       setRawCardNumber(formatCardNumber(sanitized));
                       setCardError(null);
                     }}
-                    placeholder="4242 4242 4242 4242"
+                    placeholder="•••• •••• •••• ••••"
                     className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-mono font-bold"
                     required
                   />
@@ -1043,7 +1007,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     type="text"
                     value={cardHolder}
                     onChange={(e) => setCardHolder(e.target.value.toUpperCase())}
-                    placeholder="AHMED AL-TAMIMI"
+                    placeholder="الاسم كما هو مطبوع بالإنجليزية"
                     className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-mono font-bold uppercase"
                     required
                   />
@@ -1065,7 +1029,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                         }
                         setExpiry(val);
                       }}
-                      placeholder="12/28"
+                      placeholder="MM/YY"
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-mono font-bold text-center"
                       required
                     />
@@ -1080,7 +1044,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       maxLength={4}
                       value={cvv}
                       onChange={(e) => setCvv(e.target.value.replace(/\D/g, ''))}
-                      placeholder="123"
+                      placeholder="•••"
                       className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-mono font-bold text-center"
                       required
                     />
@@ -1106,7 +1070,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl shadow-md transition flex items-center justify-center gap-2"
                 >
                   <CreditCard className="w-4 h-4" />
-                  <span>تأكيد وحفظ البطاقة</span>
+                  <span>{currentUser.savedCard ? 'تحديث بيانات البطاقة' : 'تأكيد وحفظ البطاقة'}</span>
                 </button>
               </form>
             </div>
@@ -1121,11 +1085,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">إحصائيات المبيعات ومحفظة الضمان</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              متابعة تقييمات العملاء وحالة الأموال المحتجزة في حماية Escrow
+              متابعة تقييمات المشترين وإجمالي العمليات المنفذة
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 text-center space-y-1">
               <span className="text-xs text-slate-400 font-bold block">إجمالي المبيعات</span>
               <span className="text-2xl font-black text-slate-900 dark:text-white">{currentUser.totalSales} عملية</span>
@@ -1133,16 +1097,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
             <div className="bg-amber-50 dark:bg-amber-950/40 p-4 rounded-2xl border border-amber-200 dark:border-amber-800 text-center space-y-1">
               <span className="text-xs text-amber-700 dark:text-amber-400 font-bold block">متوسط تقييم المشترين</span>
-              <span className="text-2xl font-black text-amber-600 dark:text-amber-400 flex items-center justify-center gap-1">
-                ⭐ {currentUser.sellerRating} / 5
-              </span>
-            </div>
-
-            <div className="bg-emerald-50 dark:bg-emerald-950/40 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800 text-center space-y-1">
-              <span className="text-xs text-emerald-700 dark:text-emerald-400 font-bold block">درجة الثقة المعتمدة</span>
-              <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                {currentUser.trustScore}% ممتاز
-              </span>
+              {currentUser.sellerReviewsCount && currentUser.sellerReviewsCount > 0 ? (
+                <span className="text-2xl font-black text-amber-600 dark:text-amber-400 flex items-center justify-center gap-1">
+                  ⭐ {currentUser.sellerRating} / 5
+                </span>
+              ) : (
+                <span className="text-base font-bold text-slate-400 py-1 block">
+                  لا توجد تقييمات بعد (0 تقييم)
+                </span>
+              )}
             </div>
           </div>
 

@@ -90,17 +90,23 @@ export const AccountMenuModal: React.FC<AccountMenuModalProps> = ({
         {/* Quick Stats Grid */}
         <div className="grid grid-cols-2 gap-2 mb-4">
           <div className="bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 text-center">
-            <span className="text-[10px] text-slate-400 font-bold block">تقييم الحساب</span>
-            <span className="text-xs font-black text-amber-500 flex items-center justify-center gap-1 mt-0.5">
-              <Star className="w-3 h-3 fill-amber-400" />
-              {currentUser.sellerRating || 5.0} / 5
-            </span>
+            <span className="text-[10px] text-slate-400 font-bold block">تقييم البائع</span>
+            {currentUser.sellerReviewsCount && currentUser.sellerReviewsCount > 0 ? (
+              <span className="text-xs font-black text-amber-500 flex items-center justify-center gap-1 mt-0.5">
+                <Star className="w-3 h-3 fill-amber-400" />
+                {currentUser.sellerRating} / 5
+              </span>
+            ) : (
+              <span className="text-xs font-bold text-slate-400 mt-0.5 block">
+                لا توجد تقييمات
+              </span>
+            )}
           </div>
 
           <div className="bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 text-center">
-            <span className="text-[10px] text-slate-400 font-bold block">نسبة الأمان</span>
-            <span className="text-xs font-black text-emerald-500 mt-0.5 block">
-              {currentUser.trustScore || 100}% موثوق
+            <span className="text-[10px] text-slate-400 font-bold block">إجمالي المبيعات</span>
+            <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 mt-0.5 block">
+              {currentUser.totalSales || 0} عملية
             </span>
           </div>
         </div>
