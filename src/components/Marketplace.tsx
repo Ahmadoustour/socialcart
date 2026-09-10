@@ -13,9 +13,11 @@ import {
   Download,
   Eye,
   SlidersHorizontal,
-  Play
+  Play,
+  Maximize2
 } from 'lucide-react';
-import { Product, User } from '../types';
+import { Product, User, MediaItem } from '../types';
+import { MediaLightboxModal } from './MediaLightboxModal';
 
 interface MarketplaceProps {
   products: Product[];
@@ -41,6 +43,18 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('الكل');
   const [sortBy, setSortBy] = useState<'rating' | 'price-asc' | 'price-desc' | 'sales'>('rating');
+
+  const [lightboxState, setLightboxState] = useState<{
+    isOpen: boolean;
+    mediaList: MediaItem[];
+    initialIndex: number;
+    title?: string;
+    author?: { displayName: string; avatar: string; username?: string };
+  }>({
+    isOpen: false,
+    mediaList: [],
+    initialIndex: 0
+  });
 
   const CATEGORIES = ['الكل', 'تصاميم وجرافيك', 'برمجة وتطوير', 'كتب وأدلة رقمية', 'قوالب وأدوات'];
 
@@ -181,12 +195,39 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
             >
               <div>
                 {/* Product Media Cover */}
-                <div className="relative aspect-[16/10] bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                <div 
+                  onClick={() => {
+                    const mediaItems: MediaItem[] = product.media && product.media.length > 0 
+                      ? product.media 
+                      : [{ id: `prod_med_${product.id}`, type: 'image', url: mainMedia?.url || 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format&fit=crop&q=80', caption: product.title }];
+                    setLightboxState({
+                      isOpen: true,
+                      mediaList: mediaItems,
+                      initialIndex: 0,
+                      title: product.title,
+                      author: {
+                        displayName: product.seller.displayName,
+                        avatar: product.seller.avatar,
+                        username: product.seller.username
+                      }
+                    });
+                  }}
+                  className="relative aspect-[16/10] bg-slate-100 dark:bg-slate-800 overflow-hidden cursor-pointer group/cover"
+                  title="انقر لعرض الصور ومعاينة المنتج بالحجم الكامل"
+                >
                   <img
                     src={mainMedia?.url || 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format&fit=crop&q=80'}
                     alt={product.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                    className="w-full h-full object-cover group-hover/cover:scale-105 transition duration-300"
                   />
+
+                  {/* Hover Overlay Hint */}
+                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/cover:opacity-100 transition-opacity duration-200 flex items-center justify-center pointer-events-none">
+                    <div className="bg-slate-900/90 backdrop-blur-md text-white text-[11px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg border border-white/20">
+                      <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>معاينة بالحجم الكامل</span>
+                    </div>
+                  </div>
 
                   {/* Escrow Guarantee Pill */}
                   <div className="absolute top-2.5 right-2.5 bg-emerald-950/80 backdrop-blur-md text-emerald-300 text-[10px] font-bold px-2.5 py-1 rounded-lg border border-emerald-500/30 flex items-center gap-1">
@@ -336,6 +377,16 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
         })}
       </div>
       )}
+
+      {/* Fullscreen Media Lightbox Viewer Modal for Marketplace */}
+      <MediaLightboxModal
+        isOpen={lightboxState.isOpen}
+        onClose={() => setLightboxState(prev => ({ ...prev, isOpen: false }))}
+        mediaList={lightboxState.mediaList}
+        initialIndex={lightboxState.initialIndex}
+        title={lightboxState.title}
+        author={lightboxState.author}
+      />
 
     </div>
   );

@@ -10,9 +10,11 @@ import {
   BadgeCheck,
   Check,
   Sparkles,
-  Play
+  Play,
+  Maximize2
 } from 'lucide-react';
-import { Post, User } from '../types';
+import { Post, User, MediaItem } from '../types';
+import { MediaLightboxModal } from './MediaLightboxModal';
 
 interface SocialFeedProps {
   posts: Post[];
@@ -36,6 +38,34 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [copiedPostId, setCopiedPostId] = useState<string | null>(null);
   const [activeMediaIndex, setActiveMediaIndex] = useState<Record<string, number>>({});
+  
+  // Lightbox Modal state for full screen image/video viewing
+  const [lightboxState, setLightboxState] = useState<{
+    isOpen: boolean;
+    mediaList: MediaItem[];
+    initialIndex: number;
+    title?: string;
+    author?: { displayName: string; avatar: string; username?: string };
+  }>({
+    isOpen: false,
+    mediaList: [],
+    initialIndex: 0
+  });
+
+  const handleOpenLightbox = (
+    mediaList: MediaItem[], 
+    initialIndex: number, 
+    title?: string, 
+    author?: { displayName: string; avatar: string; username?: string }
+  ) => {
+    setLightboxState({
+      isOpen: true,
+      mediaList,
+      initialIndex,
+      title,
+      author
+    });
+  };
 
   const handleCommentSubmit = (postId: string) => {
     const text = commentInputs[postId]?.trim();
@@ -202,43 +232,85 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
 
               {/* Media Carousel / Viewer (Images and Videos) */}
               {post.media && post.media.length > 0 && (
-                <div className="relative bg-black/95">
+                <div className="relative bg-slate-950 dark:bg-black overflow-hidden select-none">
+                  {/* Ambient blurred backdrop for seamless edge aesthetics */}
+                  {currentMedia?.type !== 'video' && currentMedia?.url && (
+                    <div 
+                      className="absolute inset-0 bg-cover bg-center filter blur-2xl opacity-25 scale-110 pointer-events-none"
+                      style={{ backgroundImage: `url(${currentMedia.url})` }}
+                    />
+                  )}
+
+                  {/* Media Content with Natural Responsive Aspect Ratio */}
                   {currentMedia?.type === 'video' ? (
-                    <div className="relative aspect-video max-h-96 flex items-center justify-center">
+                    <div className="relative w-full flex items-center justify-center min-h-[260px] max-h-[520px] bg-black/90">
                       <video
                         src={currentMedia.url}
                         controls
-                        className="w-full h-full object-contain max-h-96"
+                        playsInline
+                        className="w-full max-h-[520px] object-contain mx-auto"
                         poster="https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=800&auto=format&fit=crop&q=80"
                       />
+                      {/* Fullscreen lightbox button for video */}
+                      <button
+                        onClick={() => handleOpenLightbox(post.media, activeIndex, post.title, post.author)}
+                        className="absolute top-3 left-3 bg-black/70 hover:bg-black/90 text-white p-2 rounded-xl backdrop-blur-md border border-white/20 transition hover:scale-105 z-10 cursor-pointer shadow-lg"
+                        title="عرض الفيديو بشاشة كاملة ومفردة"
+                      >
+                        <Maximize2 className="w-4 h-4" />
+                      </button>
                     </div>
                   ) : (
-                    <div className="relative max-h-96 overflow-hidden flex items-center justify-center">
+                    <div 
+                      onClick={() => handleOpenLightbox(post.media, activeIndex, post.title, post.author)}
+                      className="relative w-full flex items-center justify-center min-h-[260px] max-h-[520px] cursor-pointer group/media overflow-hidden"
+                      title="انقر لرؤية الصورة لوحدها بالحجم الكامل"
+                    >
                       <img
                         src={currentMedia?.url}
                         alt={currentMedia?.caption || post.title}
-                        className="w-full object-cover max-h-96 hover:scale-[1.01] transition duration-300"
+                        className="relative z-10 w-auto h-auto max-w-full max-h-[520px] object-contain mx-auto transition-transform duration-300 group-hover/media:scale-[1.015]"
                       />
+
+                      {/* Hover Hint Overlay */}
+                      <div className="absolute inset-0 z-20 bg-black/30 opacity-0 group-hover/media:opacity-100 transition-opacity duration-200 flex items-center justify-center pointer-events-none">
+                        <div className="bg-slate-900/90 backdrop-blur-md text-white text-xs font-bold px-4 py-2 rounded-full flex items-center gap-2 shadow-2xl border border-white/20">
+                          <Maximize2 className="w-4 h-4 text-indigo-400" />
+                          <span>انقر لرؤية الصورة بالحجم الكامل</span>
+                        </div>
+                      </div>
+
+                      {/* Quick Expand Button in corner */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenLightbox(post.media, activeIndex, post.title, post.author);
+                        }}
+                        className="absolute top-3 left-3 z-30 bg-black/60 hover:bg-black/90 text-white p-2 rounded-xl backdrop-blur-md border border-white/20 transition hover:scale-105 cursor-pointer shadow-lg"
+                        title="تكبير وعرض بالحجم الكامل"
+                      >
+                        <Maximize2 className="w-4 h-4" />
+                      </button>
                     </div>
                   )}
 
                   {/* Caption & Counter */}
-                  <div className="absolute bottom-2 inset-x-3 flex items-center justify-between text-[11px] bg-slate-900/80 backdrop-blur-sm text-white px-3 py-1.5 rounded-xl pointer-events-none">
-                    <span>{currentMedia?.caption || 'ملف وسائط مأمون'}</span>
+                  <div className="absolute bottom-2 inset-x-3 flex items-center justify-between text-[11px] bg-slate-900/80 backdrop-blur-sm text-white px-3 py-1.5 rounded-xl pointer-events-none z-20">
+                    <span className="truncate max-w-[80%]">{currentMedia?.caption || 'صورة مأمونة ومفحوصة'}</span>
                     {post.media.length > 1 && (
-                      <span className="font-bold">{activeIndex + 1} / {post.media.length}</span>
+                      <span className="font-bold shrink-0">{activeIndex + 1} / {post.media.length}</span>
                     )}
                   </div>
 
                   {/* Thumbnails Navigator if multiple media items */}
                   {post.media.length > 1 && (
-                    <div className="p-2 bg-slate-950/80 flex items-center justify-center gap-2 overflow-x-auto">
+                    <div className="p-2 bg-slate-950/90 flex items-center justify-center gap-2 overflow-x-auto border-t border-white/10 z-20">
                       {post.media.map((med, mIdx) => (
                         <button
-                          key={med.id}
+                          key={med.id || mIdx}
                           onClick={() => setActiveMediaIndex(prev => ({ ...prev, [post.id]: mIdx }))}
-                          className={`relative w-12 h-12 rounded-lg overflow-hidden border-2 transition shrink-0 ${
-                            activeIndex === mIdx ? 'border-indigo-500 scale-105' : 'border-transparent opacity-60'
+                          className={`relative w-12 h-12 rounded-lg overflow-hidden border-2 transition shrink-0 cursor-pointer ${
+                            activeIndex === mIdx ? 'border-indigo-500 scale-105 ring-2 ring-indigo-500/50' : 'border-transparent opacity-60 hover:opacity-100'
                           }`}
                         >
                           {med.type === 'video' ? (
@@ -382,6 +454,16 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
         })
       )}
       </div>
+
+      {/* Fullscreen Media Lightbox Viewer Modal */}
+      <MediaLightboxModal
+        isOpen={lightboxState.isOpen}
+        onClose={() => setLightboxState(prev => ({ ...prev, isOpen: false }))}
+        mediaList={lightboxState.mediaList}
+        initialIndex={lightboxState.initialIndex}
+        title={lightboxState.title}
+        author={lightboxState.author}
+      />
 
     </div>
   );
