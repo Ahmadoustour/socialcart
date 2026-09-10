@@ -17,15 +17,8 @@ import { BottomNavBar } from './components/BottomNavBar';
 import { AuthModal } from './components/AuthModal';
 import { AccountMenuModal } from './components/AccountMenuModal';
 
-import { 
-  CURRENT_USER, 
-  SAMPLE_SELLERS, 
-  INITIAL_POSTS, 
-  INITIAL_PRODUCTS, 
-  INITIAL_ORDERS, 
-  INITIAL_CONVERSATIONS, 
-  INITIAL_NOTIFICATIONS 
-} from './mockData';
+import { auth } from './lib/firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { 
   User, 
   Post, 
@@ -38,6 +31,22 @@ import {
   SellerReview
 } from './types';
 
+const GUEST_USER: User = {
+  id: 'guest',
+  username: 'guest',
+  displayName: 'زائر',
+  email: '',
+  avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+  joinedDate: '2026',
+  isVerifiedSeller: false,
+  sellerRating: 5.0,
+  sellerReviewsCount: 0,
+  totalSales: 0,
+  trustScore: 100,
+  isEmailVerified: false,
+  twoFactorEnabled: false
+};
+
 export default function App() {
   // Navigation & Modes
   const [activeSection, setActiveSection] = useState<'social' | 'market'>('social');
@@ -48,27 +57,175 @@ export default function App() {
 
   // Auth & Account State
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
-    return localStorage.getItem('socialcart_logged_in') !== 'false';
+    const userStr = localStorage.getItem('socialcart_user');
+    if (userStr) {
+      try {
+        const u = JSON.parse(userStr);
+        if (u.username === 'ahmed_dev' || u.id === 'usr_me' || !u.id || u.id === 'guest') {
+          localStorage.removeItem('socialcart_user');
+          localStorage.setItem('socialcart_logged_in', 'false');
+          return false;
+        }
+      } catch (e) {
+        return false;
+      }
+    }
+    return localStorage.getItem('socialcart_logged_in') === 'true';
   });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
 
   // Core State
-  const [currentUser, setCurrentUser] = useState<User>(CURRENT_USER);
-  const [posts, setPosts] = useState<Post[]>(INITIAL_POSTS);
-  const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
-  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
-  const [cartItems, setCartItems] = useState<CartItem[]>([
-    { product: INITIAL_PRODUCTS[0], quantity: 1 }
-  ]);
-  const [conversations, setConversations] = useState<Conversation[]>(INITIAL_CONVERSATIONS);
+  const [currentUser, setCurrentUser] = useState<User>(() => {
+    const saved = localStorage.getItem('socialcart_user');
+    if (saved) {
+      try {
+        const u = JSON.parse(saved);
+        if (u.username === 'ahmed_dev' || u.id === 'usr_me' || !u.id || u.id === 'guest') {
+          return GUEST_USER;
+        }
+        return u;
+      } catch (e) {
+        return GUEST_USER;
+      }
+    }
+    return GUEST_USER;
+  });
+
+  const [posts, setPosts] = useState<Post[]>(() => {
+    const saved = localStorage.getItem('socialcart_posts');
+    if (!saved) return [];
+    try {
+      const parsed: Post[] = JSON.parse(saved);
+      return parsed.filter(p => 
+        !p.id.startsWith('post_') && 
+        p.author?.username !== 'sara_design' && 
+        p.author?.username !== 'omar_coder' &&
+        p.author?.username !== 'noura_academy' &&
+        p.author?.username !== 'khalid_tech' &&
+        p.author?.username !== 'ahmed_dev'
+      );
+    } catch {
+      return [];
+    }
+  });
+
+  const [products, setProducts] = useState<Product[]>(() => {
+    const saved = localStorage.getItem('socialcart_products');
+    if (!saved) return [];
+    try {
+      const parsed: Product[] = JSON.parse(saved);
+      return parsed.filter(p => 
+        !p.id.startsWith('prod_') && 
+        p.seller?.username !== 'sara_design' && 
+        p.seller?.username !== 'omar_coder' && 
+        p.seller?.username !== 'noura_academy' &&
+        p.seller?.username !== 'khalid_tech' &&
+        p.seller?.username !== 'ahmed_dev'
+      );
+    } catch {
+      return [];
+    }
+  });
+
+  const [orders, setOrders] = useState<Order[]>(() => {
+    const saved = localStorage.getItem('socialcart_orders');
+    if (!saved) return [];
+    try {
+      const parsed: Order[] = JSON.parse(saved);
+      return parsed.filter(o => !o.id.startsWith('ord_'));
+    } catch {
+      return [];
+    }
+  });
+
+  const [cartItems, setCartItems] = useState<CartItem[]>(() => {
+    const saved = localStorage.getItem('socialcart_cart');
+    if (!saved) return [];
+    try {
+      const parsed: CartItem[] = JSON.parse(saved);
+      return parsed.filter(c => !c.product?.id?.startsWith('prod_'));
+    } catch {
+      return [];
+    }
+  });
+
+  const [conversations, setConversations] = useState<Conversation[]>(() => {
+    const saved = localStorage.getItem('socialcart_conversations');
+    if (!saved) return [];
+    try {
+      const parsed: Conversation[] = JSON.parse(saved);
+      return parsed.filter(c => !c.id.startsWith('conv_'));
+    } catch {
+      return [];
+    }
+  });
+
   const [selectedSocialConvId, setSelectedSocialConvId] = useState<string | null>(null);
   const [selectedMarketConvId, setSelectedMarketConvId] = useState<string | null>(null);
-  const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotificationItem[]>(() => {
+    const saved = localStorage.getItem('socialcart_notifications');
+    if (!saved) return [];
+    try {
+      const parsed: NotificationItem[] = JSON.parse(saved);
+      return parsed.filter(n => !n.id.startsWith('notif_'));
+    } catch {
+      return [];
+    }
+  });
 
-  // Registered users for uniqueness checks
-  const registeredUsernames = ['ahmed_dev', 'sara_design', 'omar_coder', 'noura_academy', 'khalid_tech'];
-  const registeredEmails = ['ahmed.dev@example.com', 'sara.studio@example.com', 'omar.tech@example.com', 'noura.academy@example.com'];
+  // Save changes to storage
+  useEffect(() => {
+    localStorage.setItem('socialcart_cart', JSON.stringify(cartItems));
+  }, [cartItems]);
+
+  useEffect(() => {
+    localStorage.setItem('socialcart_orders', JSON.stringify(orders));
+  }, [orders]);
+
+  useEffect(() => {
+    localStorage.setItem('socialcart_posts', JSON.stringify(posts));
+  }, [posts]);
+
+  useEffect(() => {
+    localStorage.setItem('socialcart_products', JSON.stringify(products));
+  }, [products]);
+
+  useEffect(() => {
+    localStorage.setItem('socialcart_conversations', JSON.stringify(conversations));
+  }, [conversations]);
+
+  useEffect(() => {
+    localStorage.setItem('socialcart_notifications', JSON.stringify(notifications));
+  }, [notifications]);
+
+  // Sync Firebase Auth state
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (fbUser) => {
+      if (fbUser) {
+        const appUser: User = {
+          id: fbUser.uid,
+          username: fbUser.displayName ? fbUser.displayName.toLowerCase().replace(/\s+/g, '_') : (fbUser.email?.split('@')[0] || 'user'),
+          displayName: fbUser.displayName || fbUser.email?.split('@')[0] || 'مستخدم مسجل',
+          email: fbUser.email || '',
+          avatar: fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+          joinedDate: 'سبتمبر 2026',
+          isVerifiedSeller: false,
+          sellerRating: 5.0,
+          sellerReviewsCount: 0,
+          totalSales: 0,
+          trustScore: 100,
+          isEmailVerified: fbUser.emailVerified,
+          twoFactorEnabled: false
+        };
+        setCurrentUser(appUser);
+        setIsLoggedIn(true);
+        localStorage.setItem('socialcart_logged_in', 'true');
+        localStorage.setItem('socialcart_user', JSON.stringify(appUser));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Modals
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
@@ -84,11 +241,19 @@ export default function App() {
     setCurrentUser(user);
     setIsLoggedIn(true);
     localStorage.setItem('socialcart_logged_in', 'true');
+    localStorage.setItem('socialcart_user', JSON.stringify(user));
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.warn('Firebase signout error:', err);
+    }
     setIsLoggedIn(false);
+    setCurrentUser(GUEST_USER);
     localStorage.setItem('socialcart_logged_in', 'false');
+    localStorage.removeItem('socialcart_user');
     setActiveTab('feed');
     setActiveSection('social');
   };
@@ -893,8 +1058,6 @@ export default function App() {
             <ProfileView
               currentUser={currentUser}
               onUpdateProfile={handleUpdateProfile}
-              registeredUsernames={registeredUsernames}
-              registeredEmails={registeredEmails}
               onLogout={handleLogout}
             />
           ) : (
@@ -1001,23 +1164,20 @@ export default function App() {
         onOpenDirectChat={handleOpenDirectChat}
       />
 
-      {/* 7. Authentication Modal (Login / Register / Quick Demo Login) */}
+      {/* 7. Authentication Modal (Firebase Login / Register / Google Auth) */}
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         onLoginSuccess={handleLoginSuccess}
-        registeredUsernames={registeredUsernames}
-        registeredEmails={registeredEmails}
       />
 
-      {/* 8. Account Menu Drawer (Profile, Switch User, Logout) */}
+      {/* 8. Account Menu Drawer (Profile, Orders, Logout) */}
       <AccountMenuModal
         isOpen={isAccountMenuOpen}
         onClose={() => setIsAccountMenuOpen(false)}
         currentUser={currentUser}
         onSelectTab={handleSelectTab}
         onLogout={handleLogout}
-        onSwitchUser={handleSwitchUser}
       />
 
     </div>

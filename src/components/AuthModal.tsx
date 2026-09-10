@@ -15,9 +15,14 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { User } from '../types';
-import { CURRENT_USER, SAMPLE_SELLERS } from '../mockData';
 import { auth, googleProvider } from '../lib/firebase';
-import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { 
+  signInWithPopup, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  updateProfile
+} from 'firebase/auth';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -33,8 +38,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   onLoginSuccess,
   initialMode = 'login',
-  registeredUsernames = ['ahmed_dev', 'sara_design', 'omar_coder'],
-  registeredEmails = ['ahmed.dev@example.com', 'sara.studio@example.com', 'omar.tech@example.com']
+  registeredUsernames = [],
+  registeredEmails = []
 }) => {
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   
@@ -58,22 +63,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Security: Brute-Force Rate Limiting State
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [isLockedOut, setIsLockedOut] = useState(false);
-  const [lockTimer, setLockTimer] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
+    setSuccessMsg(null);
 
     if (isLockedOut) {
-      setErrorMsg('⚠️ تم تجميد تسجيل الدخول مؤقتاً لحماية الحساب من محاولات التخمين الآلية (Brute-Force). يرجى المحاولة لاحقاً.');
+      setErrorMsg('⚠️ تم تجميد تسجيل الدخول مؤقتاً لحماية الحساب من محاولات التخمين المتكررة. يرجى المحاولة لاحقاً.');
       return;
     }
 
-    const identifier = loginIdentifier.trim().toLowerCase();
+    const identifier = loginIdentifier.trim();
     if (!identifier) {
-      setErrorMsg('يرجى إدخال اسم المستخدم أو البريد الإلكتروني.');
+      setErrorMsg('يرجى إدخال البريد الإلكتروني أو اسم المستخدم.');
       return;
     }
     if (!loginPassword) {
@@ -81,78 +87,96 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    // Match with current user or sample sellers
-    const allUsers: User[] = [CURRENT_USER, ...SAMPLE_SELLERS];
-    const matched = allUsers.find(
-      u => u.username.toLowerCase() === identifier || u.email.toLowerCase() === identifier
-    );
+    setIsSubmitting(true);
 
-    if (matched) {
-      const expectedPass = matched.password || 'Password123!';
-      if (loginPassword !== expectedPass) {
-        const nextAttempts = failedAttempts + 1;
-        setFailedAttempts(nextAttempts);
+    // If identifier is not an email format, check local registered users first
+    const isEmail = identifier.includes('@');
+    let emailToAuth = identifier;
 
-        if (nextAttempts >= 5) {
-          setIsLockedOut(true);
-          setErrorMsg('🛡️ تم قفل تسجيل الدخول مؤقتاً بعد 5 محاولات خاطئة متتالية تفعيلاً لسياسة أمان كلاود فلير وجدار الحماية.');
-          setTimeout(() => {
-            setIsLockedOut(false);
-            setFailedAttempts(0);
-          }, 60000); // 1 minute lockout in demo
-        } else {
-          setErrorMsg(`كلمة المرور غير صحيحة! متبقي لديك (${5 - nextAttempts}) محاولات قبل تجميد الحساب.`);
-        }
-        return;
+    if (!isEmail) {
+      const savedUsersStr = localStorage.getItem('socialcart_registered_users');
+      const savedUsers: User[] = savedUsersStr ? JSON.parse(savedUsersStr) : [];
+      const userMatch = savedUsers.find(u => u.username.toLowerCase() === identifier.toLowerCase());
+      if (userMatch && userMatch.email) {
+        emailToAuth = userMatch.email;
       }
+    }
 
-      // Successful login - reset failed attempts
-      setFailedAttempts(0);
-      setSuccessMsg(`أهلاً بك مجدداً يا ${matched.displayName}! تم التحقق من هويتك بنجاح 🛡️`);
-      setTimeout(() => {
-        onLoginSuccess(matched);
-        onClose();
-        setSuccessMsg(null);
-      }, 700);
-    } else {
-      // Fallback created user for any custom credentials
-      const customUser: User = {
-        id: `usr_${Date.now()}`,
-        username: identifier.replace(/[^a-z0-9_]/gi, '') || 'user',
-        displayName: loginIdentifier.split('@')[0],
-        email: loginIdentifier.includes('@') ? loginIdentifier : `${identifier}@example.com`,
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    try {
+      // 1. Attempt real Firebase Authentication
+      const userCredential = await signInWithEmailAndPassword(auth, emailToAuth, loginPassword);
+      const fbUser = userCredential.user;
+      
+      const appUser: User = {
+        id: fbUser.uid,
+        username: fbUser.displayName ? fbUser.displayName.toLowerCase().replace(/\s+/g, '_') : (fbUser.email?.split('@')[0] || 'user'),
+        displayName: fbUser.displayName || fbUser.email?.split('@')[0] || 'مستخدم مسجل',
+        email: fbUser.email || emailToAuth,
+        avatar: fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
         joinedDate: 'سبتمبر 2026',
         isVerifiedSeller: false,
         sellerRating: 5.0,
         sellerReviewsCount: 0,
         totalSales: 0,
-        trustScore: 95,
-        password: loginPassword,
-        isEmailVerified: false,
+        trustScore: 100,
+        isEmailVerified: fbUser.emailVerified,
         twoFactorEnabled: false
       };
-      setSuccessMsg(`تم تسجيل الدخول بنجاح! مرحباً بك.`);
+
+      setSuccessMsg(`أهلاً بك مجدداً يا ${appUser.displayName}! تم تسجيل الدخول بنجاح 🛡️`);
       setTimeout(() => {
-        onLoginSuccess(customUser);
+        onLoginSuccess(appUser);
         onClose();
         setSuccessMsg(null);
-      }, 700);
-    }
-  };
+      }, 600);
+    } catch (fbErr: any) {
+      console.warn('Firebase Email sign-in:', fbErr);
 
-  const handleQuickLogin = (user: User) => {
-    setErrorMsg(null);
-    setSuccessMsg(`تم تسجيل الدخول بحساب: ${user.displayName}`);
-    setTimeout(() => {
-      onLoginSuccess(user);
-      onClose();
-      setSuccessMsg(null);
-    }, 500);
+      // Check locally registered accounts in browser cache
+      const savedUsersStr = localStorage.getItem('socialcart_registered_users');
+      const savedUsers: any[] = savedUsersStr ? JSON.parse(savedUsersStr) : [];
+      const localMatched = savedUsers.find(
+        u => (u.email.toLowerCase() === identifier.toLowerCase() || u.username.toLowerCase() === identifier.toLowerCase()) && u.password === loginPassword
+      );
+
+      if (localMatched) {
+        setSuccessMsg(`أهلاً بك مجدداً يا ${localMatched.displayName}! تم تسجيل الدخول بنجاح.`);
+        setTimeout(() => {
+          onLoginSuccess(localMatched);
+          onClose();
+          setSuccessMsg(null);
+        }, 600);
+        return;
+      }
+
+      const nextAttempts = failedAttempts + 1;
+      setFailedAttempts(nextAttempts);
+
+      if (nextAttempts >= 5) {
+        setIsLockedOut(true);
+        setErrorMsg('🛡️ تم قفل تسجيل الدخول مؤقتاً بعد 5 محاولات خاطئة متتالية تفعيلاً لسياسة الأمان.');
+        setTimeout(() => {
+          setIsLockedOut(false);
+          setFailedAttempts(0);
+        }, 60000);
+        return;
+      }
+
+      if (fbErr.code === 'auth/invalid-credential' || fbErr.code === 'auth/wrong-password' || fbErr.code === 'auth/user-not-found') {
+        setErrorMsg(`بيانات تسجيل الدخول غير صحيحة. متبقي لديك (${5 - nextAttempts}) محاولات.`);
+      } else if (fbErr.code === 'auth/invalid-email') {
+        setErrorMsg('صيغة البريد الإلكتروني غير صالحة.');
+      } else {
+        setErrorMsg(fbErr.message || 'بيانات الدخول غير صحيحة. يرجى التحقق من البريد وكلمة المرور.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleGoogleSignIn = async () => {
     setErrorMsg(null);
+    setSuccessMsg(null);
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const fbUser = result.user;
@@ -167,7 +191,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         sellerRating: 5.0,
         sellerReviewsCount: 0,
         totalSales: 0,
-        trustScore: 99,
+        trustScore: 100,
         isEmailVerified: fbUser.emailVerified,
         twoFactorEnabled: false
       };
@@ -187,9 +211,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleForgotPassword = async () => {
+    const email = loginIdentifier.trim();
+    if (!email || !email.includes('@')) {
+      setErrorMsg('يرجى كتابة بريدك الإلكتروني أولاً في الحقل أعلاه لإرسال رابط استعادة كلمة المرور.');
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setSuccessMsg(`تم إرسال رابط إعادة تعيين كلمة المرور إلى ${email} بنجاح.`);
+      setErrorMsg(null);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'تعذر إرسال رابط الاستعادة حالياً. يرجى التأكد من صحة البريد.');
+    }
+  };
+
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
+    setSuccessMsg(null);
 
     const cleanUsername = regUsername.trim().toLowerCase();
     const cleanEmail = regEmail.trim().toLowerCase();
@@ -205,16 +245,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    if (registeredUsernames.includes(cleanUsername)) {
-      setErrorMsg('اسم المستخدم هذا محجوز مسبقاً، يرجى اختيار اسم مستخدم آخر.');
-      return;
-    }
-
-    if (registeredEmails.includes(cleanEmail)) {
-      setErrorMsg('البريد الإلكتروني هذا مستخدم بالفعل بحساب آخر.');
-      return;
-    }
-
     if (regPassword.length < 6) {
       setErrorMsg('كلمة المرور يجب أن تتكون من 6 خانات على الأقل.');
       return;
@@ -225,30 +255,91 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    const newUser: User = {
-      id: `usr_${Date.now()}`,
-      username: cleanUsername,
-      displayName: cleanName,
-      email: cleanEmail,
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-      bio: 'عضو نشط في منصة سوشيال كارت.',
-      joinedDate: 'سبتمبر 2026',
-      isVerifiedSeller: true,
-      sellerRating: 5.0,
-      sellerReviewsCount: 0,
-      totalSales: 0,
-      trustScore: 98,
-      password: regPassword,
-      isEmailVerified: false,
-      twoFactorEnabled: false
-    };
+    setIsSubmitting(true);
 
-    setSuccessMsg('تهانينا! تم إنشاء حسابك بنجاح. جاري تسجيل الدخول...');
-    setTimeout(() => {
-      onLoginSuccess(newUser);
-      onClose();
-      setSuccessMsg(null);
-    }, 800);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, regPassword);
+      const fbUser = userCredential.user;
+
+      try {
+        await updateProfile(fbUser, { displayName: cleanName });
+      } catch (profErr) {
+        console.warn('Could not update profile name immediately:', profErr);
+      }
+
+      const newUser: User = {
+        id: fbUser.uid,
+        username: cleanUsername,
+        displayName: cleanName,
+        email: cleanEmail,
+        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+        bio: 'عضو جديد في منصة سوشيال كارت.',
+        joinedDate: 'سبتمبر 2026',
+        isVerifiedSeller: false,
+        sellerRating: 5.0,
+        sellerReviewsCount: 0,
+        totalSales: 0,
+        trustScore: 100,
+        password: regPassword,
+        isEmailVerified: fbUser.emailVerified,
+        twoFactorEnabled: false
+      };
+
+      // Also persist locally for fast offline retrieval
+      const savedUsersStr = localStorage.getItem('socialcart_registered_users');
+      const savedUsers: any[] = savedUsersStr ? JSON.parse(savedUsersStr) : [];
+      savedUsers.push(newUser);
+      localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
+
+      setSuccessMsg(`تهانينا يا ${cleanName}! تم إنشاء حسابك وتوثيقه بنجاح 🛡️`);
+      setTimeout(() => {
+        onLoginSuccess(newUser);
+        onClose();
+        setSuccessMsg(null);
+      }, 700);
+    } catch (err: any) {
+      console.warn('Firebase registration error:', err);
+      if (err.code === 'auth/email-already-in-use') {
+        setErrorMsg('البريد الإلكتروني هذا مستخدم بالفعل بحساب آخر.');
+      } else if (err.code === 'auth/weak-password') {
+        setErrorMsg('كلمة المرور ضعيفة. يرجى اختيار كلمة مرور أقوى (6 أحرف على الأقل).');
+      } else if (err.code === 'auth/invalid-email') {
+        setErrorMsg('صيغة البريد الإلكتروني غير صالحة.');
+      } else {
+        // Fallback local registration if Firebase is unreachable
+        const newUser: User = {
+          id: `usr_${Date.now()}`,
+          username: cleanUsername,
+          displayName: cleanName,
+          email: cleanEmail,
+          avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+          bio: 'عضو جديد في منصة سوشيال كارت.',
+          joinedDate: 'سبتمبر 2026',
+          isVerifiedSeller: false,
+          sellerRating: 5.0,
+          sellerReviewsCount: 0,
+          totalSales: 0,
+          trustScore: 100,
+          password: regPassword,
+          isEmailVerified: false,
+          twoFactorEnabled: false
+        };
+
+        const savedUsersStr = localStorage.getItem('socialcart_registered_users');
+        const savedUsers: any[] = savedUsersStr ? JSON.parse(savedUsersStr) : [];
+        savedUsers.push(newUser);
+        localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
+
+        setSuccessMsg(`تم إنشاء حسابك بنجاح يا ${cleanName}!`);
+        setTimeout(() => {
+          onLoginSuccess(newUser);
+          onClose();
+          setSuccessMsg(null);
+        }, 700);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -342,7 +433,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
             </svg>
-            <span>تسجيل الدخول السريع بحساب Google (Firebase)</span>
+            <span>تسجيل الدخول عبر Google</span>
           </button>
           
           <div className="flex items-center my-3">
@@ -352,57 +443,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
         </div>
 
-        {/* Quick Demo Login Helpers */}
-        {mode === 'login' && (
-          <div className="mb-5 p-3.5 bg-indigo-50/60 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900 rounded-2xl">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                دخول تجريبي سريع بنقرة واحدة:
-              </span>
-            </div>
-            <div className="grid grid-cols-1 gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleQuickLogin(CURRENT_USER)}
-                className="w-full text-right px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 text-xs flex items-center justify-between transition"
-              >
-                <div className="flex items-center gap-2">
-                  <img src={CURRENT_USER.avatar} alt="" className="w-5 h-5 rounded-full object-cover" />
-                  <span className="font-bold text-slate-800 dark:text-slate-200">{CURRENT_USER.displayName}</span>
-                </div>
-                <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold">بائع معتمد</span>
-              </button>
-              
-              <button
-                type="button"
-                onClick={() => handleQuickLogin(SAMPLE_SELLERS[0])}
-                className="w-full text-right px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 text-xs flex items-center justify-between transition"
-              >
-                <div className="flex items-center gap-2">
-                  <img src={SAMPLE_SELLERS[0].avatar} alt="" className="w-5 h-5 rounded-full object-cover" />
-                  <span className="font-bold text-slate-800 dark:text-slate-200">{SAMPLE_SELLERS[0].displayName}</span>
-                </div>
-                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">مصممة ومتاجر</span>
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* LOGIN FORM */}
         {mode === 'login' ? (
           <form onSubmit={handleLoginSubmit} className="space-y-3.5">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                اسم المستخدم أو البريد الإلكتروني
+                البريد الإلكتروني أو اسم المستخدم
               </label>
               <div className="relative">
                 <input
                   type="text"
                   value={loginIdentifier}
                   onChange={e => setLoginIdentifier(e.target.value)}
-                  placeholder="ahmed_dev أو user@example.com"
+                  placeholder="name@example.com أو اسم المستخدم"
                   className="w-full px-3.5 py-2.5 pl-10 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  required
                 />
                 <UserIcon className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
               </div>
@@ -415,7 +470,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </label>
                 <button
                   type="button"
-                  onClick={() => alert('للتجربة، يمكنك كتابة أي كلمة مرور أو استخدام أزرار الدخول السريع في الأعلى!')}
+                  onClick={handleForgotPassword}
                   className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline"
                 >
                   نسيت كلمة المرور؟
@@ -428,6 +483,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   onChange={e => setLoginPassword(e.target.value)}
                   placeholder="••••••••"
                   className="w-full px-3.5 py-2.5 pl-10 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  required
                 />
                 <button
                   type="button"
@@ -441,10 +497,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
             <button
               type="submit"
-              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition flex items-center justify-center gap-2 mt-4"
+              disabled={isSubmitting}
+              className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-indigo-500/20 transition flex items-center justify-center gap-2 mt-4"
             >
               <LogIn className="w-4 h-4" />
-              <span>تسجيل الدخول</span>
+              <span>{isSubmitting ? 'جاري التحقق...' : 'تسجيل الدخول'}</span>
             </button>
           </form>
         ) : (

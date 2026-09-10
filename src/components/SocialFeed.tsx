@@ -83,36 +83,28 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
             <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300">أضف قصتك</span>
           </div>
 
-          {/* Sample creators */}
-          {[
-            { name: 'سارة', handle: 'sara_design', img: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&auto=format&fit=crop&q=80', active: true },
-            { name: 'عمر', handle: 'omar_coder', img: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=120&auto=format&fit=crop&q=80', active: true },
-            { name: 'نورة', handle: 'noura_academy', img: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=120&auto=format&fit=crop&q=80', active: false },
-            { name: 'خالد', handle: 'khalid_tech', img: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80', active: false },
-          ].map((item, idx) => (
-            <div 
-              key={idx} 
-              onClick={() => onOpenDirectChat(item.handle, item.name, item.img)}
-              className="flex flex-col items-center gap-1.5 cursor-pointer shrink-0 hover:opacity-90 transition"
-              title={`مراسلة @${item.handle}`}
-            >
-              <div className="relative">
-                <img
-                  src={item.img}
-                  alt={item.name}
-                  className={`w-14 h-14 rounded-full object-cover p-0.5 ${
-                    item.active 
-                      ? 'ring-2 ring-emerald-500 shadow-sm' 
-                      : 'ring-1 ring-slate-300 dark:ring-slate-700'
-                  }`}
-                />
-                {item.active && (
+          {/* Community Active Creators from real posts */}
+          {Array.from(new Map<string, User>(posts.map(p => [p.author.username, p.author])).values())
+            .filter((author: User) => author.username !== currentUser.username)
+            .slice(0, 6)
+            .map((author: User, idx) => (
+              <div 
+                key={author.id || idx} 
+                onClick={() => onOpenDirectChat(author.username, author.displayName, author.avatar)}
+                className="flex flex-col items-center gap-1.5 cursor-pointer shrink-0 hover:opacity-90 transition"
+                title={`مراسلة @${author.username}`}
+              >
+                <div className="relative">
+                  <img
+                    src={author.avatar}
+                    alt={author.displayName}
+                    className="w-14 h-14 rounded-full object-cover p-0.5 ring-2 ring-emerald-500/70 shadow-sm"
+                  />
                   <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900" />
-                )}
+                </div>
+                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">@{author.username}</span>
               </div>
-              <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">@{item.handle}</span>
-            </div>
-          ))}
+            ))}
         </div>
       </div>
 
@@ -160,7 +152,29 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
 
       {/* Posts List */}
       <div className="space-y-6">
-        {posts.map(post => {
+        {posts.length === 0 ? (
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-10 text-center space-y-4 shadow-sm">
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+              <Sparkles className="w-8 h-8" />
+            </div>
+            <div className="space-y-1.5 max-w-md mx-auto">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                لا توجد منشورات حتى الآن
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                مجتمع سوشيال كارت جاهز لنشر أول محتوى حقيقي. كن أول من يشارك أفكاره، أعماله أو نصائحه!
+              </p>
+            </div>
+            <button
+              onClick={onOpenCreatePost}
+              className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl text-xs shadow-md shadow-indigo-600/20 transition cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>نشر أول منشور الآن</span>
+            </button>
+          </div>
+        ) : (
+          posts.map(post => {
           const activeIndex = activeMediaIndex[post.id] || 0;
           const currentMedia = post.media?.[activeIndex];
 
@@ -420,7 +434,8 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
 
             </article>
           );
-        })}
+        })
+      )}
       </div>
 
     </div>

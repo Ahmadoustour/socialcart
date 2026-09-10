@@ -145,8 +145,32 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
       </div>
 
       {/* Products Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredProducts.map(product => {
+      {filteredProducts.length === 0 ? (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-12 text-center space-y-4 shadow-sm">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+            <ShoppingCart className="w-8 h-8" />
+          </div>
+          <div className="space-y-1.5 max-w-md mx-auto">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+              {searchQuery || selectedCategory !== 'الكل' ? 'لا توجد منتجات مطابقة لخيارات البحث' : 'لا توجد منتجات رقمية معروضة حتى الآن'}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              {searchQuery || selectedCategory !== 'الكل'
+                ? 'جرب البحث بكلمات أخرى أو اختر تصنيفاً مختلفاً.'
+                : 'كن أول بائع يطرح منتجاته الرقمية (قوالب، برمجيات، تصاميم، كتب) مع حماية الضمان المالي 100%!'}
+            </p>
+          </div>
+          <button
+            onClick={onOpenSellModal}
+            className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs shadow-md shadow-emerald-600/20 transition cursor-pointer"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>+ إضافة أول منتج للبيع</span>
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredProducts.map(product => {
           const mainMedia = product.media?.[0];
           const hasVideo = product.media?.some(m => m.type === 'video');
 
@@ -311,6 +335,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
           );
         })}
       </div>
+      )}
 
     </div>
   );

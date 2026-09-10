@@ -106,7 +106,7 @@ export const Header: React.FC<HeaderProps> = ({
                 }`}
               >
                 <Globe className="w-3.5 h-3.5" />
-                <span>السوشيال</span>
+                <span>المجتمع</span>
               </button>
 
               <button
@@ -294,7 +294,7 @@ export const Header: React.FC<HeaderProps> = ({
                 }`}
               >
                 <Globe className="w-4 h-4" />
-                قسم السوشيال
+                قسم المجتمع
               </button>
               <button
                 onClick={() => {

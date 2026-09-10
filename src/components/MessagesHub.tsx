@@ -350,7 +350,7 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition"
                       >
                         <Sparkles className="w-3.5 h-3.5" />
-                        <span>استكشاف منشورات السوشيال</span>
+                        <span>استكشاف منشورات المجتمع</span>
                       </button>
                     )
                   )
@@ -708,7 +708,7 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                   type="text"
                   value={newChatUsername}
                   onChange={(e) => setNewChatUsername(e.target.value)}
-                  placeholder={isMarket ? "مثال: sara_design" : "مثال: omar_coder"}
+                  placeholder={isMarket ? "اسم مستخدم البائع أو المشتري..." : "اسم المستخدم المستلم..."}
                   className={`w-full px-3 py-2.5 border rounded-xl bg-slate-50 dark:bg-slate-800 outline-none transition ${
                     isMarket ? 'focus:ring-2 focus:ring-emerald-500' : 'focus:ring-2 focus:ring-indigo-500'
                   }`}

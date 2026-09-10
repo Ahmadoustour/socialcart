@@ -7,13 +7,11 @@ import {
   Star, 
   PackageCheck, 
   Settings, 
-  Users, 
   Check, 
   ExternalLink,
   ChevronLeft
 } from 'lucide-react';
 import { User } from '../types';
-import { CURRENT_USER, SAMPLE_SELLERS } from '../mockData';
 
 interface AccountMenuModalProps {
   isOpen: boolean;
@@ -21,7 +19,7 @@ interface AccountMenuModalProps {
   currentUser: User;
   onSelectTab: (tab: string) => void;
   onLogout: () => void;
-  onSwitchUser: (user: User) => void;
+  onSwitchUser?: (user: User) => void;
 }
 
 export const AccountMenuModal: React.FC<AccountMenuModalProps> = ({
@@ -30,11 +28,8 @@ export const AccountMenuModal: React.FC<AccountMenuModalProps> = ({
   currentUser,
   onSelectTab,
   onLogout,
-  onSwitchUser
 }) => {
   if (!isOpen) return null;
-
-  const demoAccounts: User[] = [CURRENT_USER, ...SAMPLE_SELLERS];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center sm:items-start justify-center sm:justify-end p-4 sm:p-6 bg-black/60 backdrop-blur-sm animate-fadeIn">
@@ -57,7 +52,7 @@ export const AccountMenuModal: React.FC<AccountMenuModalProps> = ({
             onClose();
           }}
           className="flex items-center gap-3.5 pb-4 border-b border-slate-100 dark:border-slate-800 mb-4 cursor-pointer group hover:bg-slate-50 dark:hover:bg-slate-800/40 -mx-2 px-2 pt-1 rounded-2xl transition"
-          title="انقر لفتح الملف الشخصي وتعديل الصورة"
+          title="انقر لفتح الملف الشخصي وتعديل الحساب"
         >
           <div className="relative shrink-0">
             <img
@@ -83,7 +78,7 @@ export const AccountMenuModal: React.FC<AccountMenuModalProps> = ({
             </p>
             <div className="flex items-center gap-2 mt-1">
               <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
-                {currentUser.isVerifiedSeller ? 'حساب بائع موثق' : 'حساب مشتري'}
+                {currentUser.isVerifiedSeller ? 'حساب بائع موثق' : 'حساب مستخدم'}
               </span>
               <span className="text-[10px] text-indigo-500 dark:text-indigo-400 font-semibold group-hover:underline">
                 تعديل الحساب ←
@@ -95,17 +90,17 @@ export const AccountMenuModal: React.FC<AccountMenuModalProps> = ({
         {/* Quick Stats Grid */}
         <div className="grid grid-cols-2 gap-2 mb-4">
           <div className="bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 text-center">
-            <span className="text-[10px] text-slate-400 font-bold block">تقييم البائع</span>
+            <span className="text-[10px] text-slate-400 font-bold block">تقييم الحساب</span>
             <span className="text-xs font-black text-amber-500 flex items-center justify-center gap-1 mt-0.5">
               <Star className="w-3 h-3 fill-amber-400" />
-              {currentUser.sellerRating} / 5
+              {currentUser.sellerRating || 5.0} / 5
             </span>
           </div>
 
           <div className="bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 text-center">
             <span className="text-[10px] text-slate-400 font-bold block">نسبة الأمان</span>
             <span className="text-xs font-black text-emerald-500 mt-0.5 block">
-              {currentUser.trustScore}% موثوق
+              {currentUser.trustScore || 100}% موثوق
             </span>
           </div>
         </div>
@@ -141,37 +136,6 @@ export const AccountMenuModal: React.FC<AccountMenuModalProps> = ({
           </button>
         </div>
 
-        {/* Switch Account Section */}
-        <div className="border-t border-slate-100 dark:border-slate-800 pt-3 mb-4">
-          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-2">
-            تبديل الحساب (تجريبي سريع)
-          </span>
-          <div className="space-y-1 max-h-32 overflow-y-auto">
-            {demoAccounts.map(account => (
-              <button
-                key={account.id}
-                onClick={() => {
-                  onSwitchUser(account);
-                  onClose();
-                }}
-                className={`w-full text-right p-2 rounded-xl text-xs flex items-center justify-between transition ${
-                  account.id === currentUser.id
-                    ? 'bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 font-bold'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <div className="flex items-center gap-2 truncate">
-                  <img src={account.avatar} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
-                  <span className="truncate">{account.displayName}</span>
-                </div>
-                {account.id === currentUser.id && (
-                  <Check className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* LOGOUT BUTTON - Prominent & Red */}
         <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
           <button
@@ -179,7 +143,7 @@ export const AccountMenuModal: React.FC<AccountMenuModalProps> = ({
               onLogout();
               onClose();
             }}
-            className="w-full py-2.5 px-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 font-bold text-xs transition flex items-center justify-center gap-2"
+            className="w-full py-2.5 px-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
             <span>تسجيل الخروج من الحساب</span>

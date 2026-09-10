@@ -45,7 +45,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
       <div className="max-w-xl mx-auto px-2 sm:px-4">
         
         {/* ========================================================================= */}
-        {/* CASE 1: SOCIAL BUTTONS (أزرار قسم السوشيال المخصصة فقط عند تفعيل السوشيال) */}
+        {/* CASE 1: SOCIAL BUTTONS (أزرار قسم المجتمع المخصصة فقط عند تفعيل المجتمع) */}
         {/* ========================================================================= */}
         {activeSection === 'social' ? (
           <div className="flex items-center justify-around h-16 sm:h-18">
@@ -73,7 +73,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
                     onOpenCreateModal();
                   }
                 }}
-                title="إضافة منشور جديد في السوشيال"
+                title="إضافة منشور جديد في المجتمع"
                 className="w-12 h-12 -mt-5 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30 bg-gradient-to-tr from-indigo-600 to-indigo-500 transition-transform active:scale-95 hover:scale-105"
               >
                 <Plus className="w-6 h-6 stroke-[2.8]" />
