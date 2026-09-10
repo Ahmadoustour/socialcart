@@ -204,9 +204,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } catch (err: any) {
       console.warn('Firebase Google Auth error:', err);
       if (err.code === 'auth/popup-closed-by-user') {
-        setErrorMsg('تم إغلاق نافذة تسجيل الدخول.');
+        setErrorMsg('تم إغلاق نافذة تسجيل الدخول من قِبلك.');
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setErrorMsg('النطاق غير مصرح به بعد في Firebase: يرجى إضافة دومين موقعك (مثل socialcart-five.vercel.app) داخل Firebase Console > Authentication > Settings > Authorized domains.');
+      } else if (err.code === 'auth/popup-blocked') {
+        setErrorMsg('المتصفح منع النافذة المنبثقة. يرجى السماح بالنوافذ المنبثقة (Popups) للموقع.');
       } else {
-        setErrorMsg(`تنبيه مصادقة Firebase: ${err.message || 'يرجى التأكد من تفعيل Google Provider في Firebase Console.'}`);
+        setErrorMsg(`تنبيه مصادقة Firebase: ${err.message || 'يرجى التأكد من تفعيل موفر Google في لوحة تحكم Firebase.'}`);
       }
     }
   };
