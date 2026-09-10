@@ -100,14 +100,9 @@ export default function App() {
     if (!saved) return [];
     try {
       const parsed: Post[] = JSON.parse(saved);
-      return parsed.filter(p => 
-        !p.id.startsWith('post_') && 
-        p.author?.username !== 'sara_design' && 
-        p.author?.username !== 'omar_coder' &&
-        p.author?.username !== 'noura_academy' &&
-        p.author?.username !== 'khalid_tech' &&
-        p.author?.username !== 'ahmed_dev'
-      );
+      if (!Array.isArray(parsed)) return [];
+      const demoMockIds = new Set(['demo_post_1', 'demo_post_2', 'demo_post_3']);
+      return parsed.filter(p => p && p.id && !demoMockIds.has(p.id));
     } catch {
       return [];
     }
@@ -118,14 +113,9 @@ export default function App() {
     if (!saved) return [];
     try {
       const parsed: Product[] = JSON.parse(saved);
-      return parsed.filter(p => 
-        !p.id.startsWith('prod_') && 
-        p.seller?.username !== 'sara_design' && 
-        p.seller?.username !== 'omar_coder' && 
-        p.seller?.username !== 'noura_academy' &&
-        p.seller?.username !== 'khalid_tech' &&
-        p.seller?.username !== 'ahmed_dev'
-      );
+      if (!Array.isArray(parsed)) return [];
+      const demoMockIds = new Set(['demo_prod_1', 'demo_prod_2', 'demo_prod_3']);
+      return parsed.filter(p => p && p.id && !demoMockIds.has(p.id));
     } catch {
       return [];
     }
@@ -136,7 +126,7 @@ export default function App() {
     if (!saved) return [];
     try {
       const parsed: Order[] = JSON.parse(saved);
-      return parsed.filter(o => !o.id.startsWith('ord_'));
+      return Array.isArray(parsed) ? parsed.filter(o => o && o.id) : [];
     } catch {
       return [];
     }
@@ -147,7 +137,7 @@ export default function App() {
     if (!saved) return [];
     try {
       const parsed: CartItem[] = JSON.parse(saved);
-      return parsed.filter(c => !c.product?.id?.startsWith('prod_'));
+      return Array.isArray(parsed) ? parsed.filter(c => c && c.product && c.product.id) : [];
     } catch {
       return [];
     }
@@ -158,7 +148,7 @@ export default function App() {
     if (!saved) return [];
     try {
       const parsed: Conversation[] = JSON.parse(saved);
-      return parsed.filter(c => !c.id.startsWith('conv_'));
+      return Array.isArray(parsed) ? parsed.filter(c => c && c.id) : [];
     } catch {
       return [];
     }
@@ -171,7 +161,7 @@ export default function App() {
     if (!saved) return [];
     try {
       const parsed: NotificationItem[] = JSON.parse(saved);
-      return parsed.filter(n => !n.id.startsWith('notif_'));
+      return Array.isArray(parsed) ? parsed.filter(n => n && n.id) : [];
     } catch {
       return [];
     }
@@ -209,34 +199,36 @@ export default function App() {
         if (!res.ok) throw new Error('Failed to fetch posts');
         return res.json();
       })
-      .then((serverPosts: Post[]) => {
-        if (Array.isArray(serverPosts)) {
+      .then((serverData: any) => {
+        const serverPosts: Post[] = Array.isArray(serverData) ? serverData : (serverData?.posts || []);
+        if (Array.isArray(serverPosts) && serverPosts.length > 0) {
           setPosts(prev => {
-            // Merge server posts with any unsaved local ones
-            const serverIds = new Set(serverPosts.map(p => p.id));
-            const localOnly = prev.filter(p => !serverIds.has(p.id));
-            return [...localOnly, ...serverPosts];
+            const map = new Map<string, Post>();
+            serverPosts.forEach(p => { if (p && p.id) map.set(p.id, p); });
+            prev.forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
+            return Array.from(map.values());
           });
         }
       })
-      .catch(err => console.log('Notice: using local posts cache (server fetch skipped):', err));
+      .catch(err => console.log('Notice: using local posts cache:', err));
 
     fetch('/api/products')
       .then(res => {
         if (!res.ok) throw new Error('Failed to fetch products');
         return res.json();
       })
-      .then((serverProducts: Product[]) => {
-        if (Array.isArray(serverProducts)) {
+      .then((serverData: any) => {
+        const serverProducts: Product[] = Array.isArray(serverData) ? serverData : (serverData?.products || []);
+        if (Array.isArray(serverProducts) && serverProducts.length > 0) {
           setProducts(prev => {
-            // Merge server products with any unsaved local ones
-            const serverIds = new Set(serverProducts.map(p => p.id));
-            const localOnly = prev.filter(p => !serverIds.has(p.id));
-            return [...localOnly, ...serverProducts];
+            const map = new Map<string, Product>();
+            serverProducts.forEach(p => { if (p && p.id) map.set(p.id, p); });
+            prev.forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
+            return Array.from(map.values());
           });
         }
       })
-      .catch(err => console.log('Notice: using local products cache (server fetch skipped):', err));
+      .catch(err => console.log('Notice: using local products cache:', err));
   }, []);
 
   // Sync Firebase Auth state
@@ -388,21 +380,36 @@ export default function App() {
   }, [activeSection]);
 
   // 1. Social Interactions Handlers
-  const handleLikePost = (postId: string) => {
+  const handleLikePost = async (postId: string) => {
+    let targetPost: Post | null = null;
     setPosts(prev => prev.map(p => {
       if (p.id === postId) {
         const liked = !p.likedByMe;
-        return {
+        const updated = {
           ...p,
           likedByMe: liked,
-          likesCount: liked ? p.likesCount + 1 : p.likesCount - 1
+          likesCount: liked ? p.likesCount + 1 : Math.max(0, p.likesCount - 1)
         };
+        targetPost = updated;
+        return updated;
       }
       return p;
     }));
+
+    if (targetPost) {
+      try {
+        await fetch('/api/posts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(targetPost)
+        });
+      } catch (err) {
+        console.error('Failed to persist like to server:', err);
+      }
+    }
   };
 
-  const handleAddComment = (postId: string, text: string) => {
+  const handleAddComment = async (postId: string, text: string) => {
     const newComment = {
       id: `c_${Date.now()}`,
       userId: currentUser.id,
@@ -412,15 +419,30 @@ export default function App() {
       createdAt: 'الآن'
     };
 
+    let targetPost: Post | null = null;
     setPosts(prev => prev.map(p => {
       if (p.id === postId) {
-        return {
+        const updated = {
           ...p,
           comments: [newComment, ...p.comments]
         };
+        targetPost = updated;
+        return updated;
       }
       return p;
     }));
+
+    if (targetPost) {
+      try {
+        await fetch('/api/posts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(targetPost)
+        });
+      } catch (err) {
+        console.error('Failed to persist comment to server:', err);
+      }
+    }
   };
 
   const handleCreatePost = async (title: string, description: string, media: MediaItem[], tags: string[]) => {
@@ -457,8 +479,17 @@ export default function App() {
         body: JSON.stringify(newPost)
       });
       if (res.ok) {
-        const savedPost = await res.json();
-        setPosts(prev => [savedPost, ...prev.filter(p => p.id !== newPost.id && p.id !== savedPost.id)]);
+        const data = await res.json();
+        const savedPost: Post = (data && data.post) ? data.post : data;
+        if (savedPost && savedPost.id) {
+          setPosts(prev => {
+            const exists = prev.some(p => p.id === savedPost.id);
+            if (exists) {
+              return prev.map(p => p.id === savedPost.id ? savedPost : p);
+            }
+            return [savedPost, ...prev.filter(p => p.id !== newPost.id)];
+          });
+        }
       }
     } catch (err) {
       console.error('Failed to persist post to server:', err);
@@ -560,8 +591,17 @@ export default function App() {
         body: JSON.stringify(newProduct)
       });
       if (res.ok) {
-        const savedProduct = await res.json();
-        setProducts(prev => [savedProduct, ...prev.filter(p => p.id !== newProduct.id && p.id !== savedProduct.id)]);
+        const data = await res.json();
+        const savedProduct: Product = (data && data.product) ? data.product : data;
+        if (savedProduct && savedProduct.id) {
+          setProducts(prev => {
+            const exists = prev.some(p => p.id === savedProduct.id);
+            if (exists) {
+              return prev.map(p => p.id === savedProduct.id ? savedProduct : p);
+            }
+            return [savedProduct, ...prev.filter(p => p.id !== newProduct.id)];
+          });
+        }
       }
     } catch (err) {
       console.error('Failed to persist product to server:', err);
@@ -647,7 +687,7 @@ export default function App() {
   };
 
   // 5. Rate seller handler
-  const handleRateSellerSubmit = (orderId: string, rating: number, comment: string) => {
+  const handleRateSellerSubmit = async (orderId: string, rating: number, comment: string) => {
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, hasRatedSeller: true } : o));
 
     const targetOrder = orders.find(o => o.id === orderId);
@@ -664,22 +704,40 @@ export default function App() {
     };
 
     // Update product reviews & seller rating
-    setProducts(prev => prev.map(p => {
-      if (p.seller.username === targetOrder.sellerUsername) {
-        const updatedReviews = [newReview, ...p.reviews];
-        const avg = Number((updatedReviews.reduce((s, r) => s + r.rating, 0) / updatedReviews.length).toFixed(1));
-        return {
-          ...p,
-          reviews: updatedReviews,
-          seller: {
-            ...p.seller,
-            rating: avg,
-            reviewsCount: updatedReviews.length
-          }
-        };
+    let updatedProductsToSync: Product[] = [];
+    setProducts(prev => {
+      const next = prev.map(p => {
+        if (p.seller.username === targetOrder.sellerUsername) {
+          const updatedReviews = [newReview, ...p.reviews];
+          const avg = Number((updatedReviews.reduce((s, r) => s + r.rating, 0) / updatedReviews.length).toFixed(1));
+          const updatedProd = {
+            ...p,
+            reviews: updatedReviews,
+            seller: {
+              ...p.seller,
+              rating: avg,
+              reviewsCount: updatedReviews.length
+            }
+          };
+          updatedProductsToSync.push(updatedProd);
+          return updatedProd;
+        }
+        return p;
+      });
+      return next;
+    });
+
+    for (const prod of updatedProductsToSync) {
+      try {
+        await fetch('/api/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(prod)
+        });
+      } catch (err) {
+        console.error('Failed to sync updated product review to server:', err);
       }
-      return p;
-    }));
+    }
   };
 
   // 6. Report and Refund Submission

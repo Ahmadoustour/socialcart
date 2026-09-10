@@ -309,7 +309,7 @@ app.post("/api/posts", (req, res) => {
       posts.unshift(post);
     }
     writeJsonFile(POSTS_FILE, posts);
-    res.json({ success: true, post });
+    res.json(post);
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Failed to save post" });
   }
@@ -347,7 +347,7 @@ app.post("/api/products", (req, res) => {
       products.unshift(product);
     }
     writeJsonFile(PRODUCTS_FILE, products);
-    res.json({ success: true, product });
+    res.json(product);
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Failed to save product" });
   }
