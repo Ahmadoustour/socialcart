@@ -202,6 +202,43 @@ export default function App() {
     localStorage.setItem('socialcart_notifications', JSON.stringify(notifications));
   }, [notifications]);
 
+  // Load persistent posts and products from server API
+  useEffect(() => {
+    fetch('/api/posts')
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to fetch posts');
+        return res.json();
+      })
+      .then((serverPosts: Post[]) => {
+        if (Array.isArray(serverPosts)) {
+          setPosts(prev => {
+            // Merge server posts with any unsaved local ones
+            const serverIds = new Set(serverPosts.map(p => p.id));
+            const localOnly = prev.filter(p => !serverIds.has(p.id));
+            return [...localOnly, ...serverPosts];
+          });
+        }
+      })
+      .catch(err => console.log('Notice: using local posts cache (server fetch skipped):', err));
+
+    fetch('/api/products')
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to fetch products');
+        return res.json();
+      })
+      .then((serverProducts: Product[]) => {
+        if (Array.isArray(serverProducts)) {
+          setProducts(prev => {
+            // Merge server products with any unsaved local ones
+            const serverIds = new Set(serverProducts.map(p => p.id));
+            const localOnly = prev.filter(p => !serverIds.has(p.id));
+            return [...localOnly, ...serverProducts];
+          });
+        }
+      })
+      .catch(err => console.log('Notice: using local products cache (server fetch skipped):', err));
+  }, []);
+
   // Sync Firebase Auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (fbUser) => {
@@ -386,7 +423,7 @@ export default function App() {
     }));
   };
 
-  const handleCreatePost = (title: string, description: string, media: MediaItem[], tags: string[]) => {
+  const handleCreatePost = async (title: string, description: string, media: MediaItem[], tags: string[]) => {
     const newPost: Post = {
       id: `post_${Date.now()}`,
       userId: currentUser.id,
@@ -407,9 +444,34 @@ export default function App() {
       tags
     };
 
+    // Optimistic UI update
     setPosts(prev => [newPost, ...prev]);
     setActiveSection('social');
     setActiveTab('feed');
+
+    // Server-side persistence
+    try {
+      const res = await fetch('/api/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPost)
+      });
+      if (res.ok) {
+        const savedPost = await res.json();
+        setPosts(prev => [savedPost, ...prev.filter(p => p.id !== newPost.id && p.id !== savedPost.id)]);
+      }
+    } catch (err) {
+      console.error('Failed to persist post to server:', err);
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    setPosts(prev => prev.filter(p => p.id !== postId));
+    try {
+      await fetch(`/api/posts/${postId}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error('Failed to delete post on server:', err);
+    }
   };
 
   // 2. Marketplace Handlers
@@ -447,7 +509,7 @@ export default function App() {
   };
 
   // Create Product handler
-  const handleCreateProduct = (data: {
+  const handleCreateProduct = async (data: {
     title: string;
     description: string;
     category: string;
@@ -485,9 +547,34 @@ export default function App() {
       reviews: []
     };
 
+    // Optimistic UI update
     setProducts(prev => [newProduct, ...prev]);
     setActiveSection('market');
     setActiveTab('marketplace');
+
+    // Server-side persistence
+    try {
+      const res = await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newProduct)
+      });
+      if (res.ok) {
+        const savedProduct = await res.json();
+        setProducts(prev => [savedProduct, ...prev.filter(p => p.id !== newProduct.id && p.id !== savedProduct.id)]);
+      }
+    } catch (err) {
+      console.error('Failed to persist product to server:', err);
+    }
+  };
+
+  const handleDeleteProduct = async (productId: string) => {
+    setProducts(prev => prev.filter(p => p.id !== productId));
+    try {
+      await fetch(`/api/products/${productId}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error('Failed to delete product on server:', err);
+    }
   };
 
   // Cart quantity update
@@ -1062,6 +1149,21 @@ export default function App() {
               currentUser={currentUser}
               onUpdateProfile={handleUpdateProfile}
               onLogout={handleLogout}
+              posts={posts}
+              products={products}
+              onDeletePost={handleDeletePost}
+              onDeleteProduct={handleDeleteProduct}
+              onOpenCreatePost={() => setIsCreatePostOpen(true)}
+              onOpenCreateProduct={() => setIsCreateProductOpen(true)}
+              initialTab={activeSection === 'market' ? 'my-products' : 'my-posts'}
+              onNavigateToFeed={() => {
+                setActiveSection('social');
+                setActiveTab('feed');
+              }}
+              onNavigateToMarket={() => {
+                setActiveSection('market');
+                setActiveTab('marketplace');
+              }}
             />
           ) : (
             <div className="max-w-md mx-auto my-14 p-8 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl text-center animate-fadeIn">

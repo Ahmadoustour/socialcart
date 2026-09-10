@@ -113,7 +113,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
             {/* 4. Account / Profile */}
             {isLoggedIn ? (
               <button
-                onClick={onOpenAccountMenu}
+                onClick={() => onSelectTab('profile')}
                 className={`flex flex-col items-center justify-center flex-1 py-1.5 transition select-none ${
                   activeTab === 'profile'
                     ? 'text-indigo-600 dark:text-indigo-400'
@@ -129,7 +129,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
                       : 'ring-transparent hover:ring-slate-300'
                   }`}
                 />
-                <span className="text-[11px] font-bold mt-1">حسابي</span>
+                <span className="text-[11px] font-bold mt-1">الملف</span>
               </button>
             ) : (
               <button
@@ -158,7 +158,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
               }`}
             >
               <Store className={`w-5 h-5 transition-transform ${activeTab === 'marketplace' ? 'scale-110 stroke-[2.5]' : ''}`} />
-              <span className="text-[11px] font-bold mt-1">المتجر</span>
+              <span className="text-[10px] sm:text-[11px] font-bold mt-1">المتجر</span>
             </button>
 
             {/* 2. Cart (Requires Login) */}
@@ -184,11 +184,11 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
                   </span>
                 )}
               </div>
-              <span className="text-[11px] font-bold mt-1">السلة</span>
+              <span className="text-[10px] sm:text-[11px] font-bold mt-1">السلة</span>
             </button>
 
             {/* 3. CENTER ACTION BUTTON: + Sell Digital Product */}
-            <div className="flex flex-col items-center justify-center px-1">
+            <div className="flex flex-col items-center justify-center px-0.5">
               <button
                 onClick={() => {
                   if (!isLoggedIn) {
@@ -198,9 +198,9 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
                   }
                 }}
                 title="عرض منتج رقمي للبيع في المتجر"
-                className="w-12 h-12 -mt-5 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-emerald-500/30 bg-gradient-to-tr from-emerald-600 to-emerald-500 transition-transform active:scale-95 hover:scale-105"
+                className="w-11 h-11 sm:w-12 sm:h-12 -mt-5 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-emerald-500/30 bg-gradient-to-tr from-emerald-600 to-emerald-500 transition-transform active:scale-95 hover:scale-105"
               >
-                <Plus className="w-6 h-6 stroke-[2.8]" />
+                <Plus className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.8]" />
               </button>
               <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 mt-1">
                 + بيع
@@ -231,21 +231,48 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
                   </span>
                 )}
               </div>
-              <span className="text-[11px] font-bold mt-1">الرسائل</span>
+              <span className="text-[10px] sm:text-[11px] font-bold mt-1">الرسائل</span>
             </button>
 
-            {/* 5. Purchases (Requires Login) / Login */}
+            {/* 5. Purchases (Requires Login) */}
+            <button
+              onClick={() => {
+                if (!isLoggedIn) {
+                  onOpenAuthModal();
+                } else {
+                  onSelectTab('purchases');
+                }
+              }}
+              className={`flex flex-col items-center justify-center flex-1 py-1.5 transition select-none ${
+                activeTab === 'purchases'
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <PackageCheck className={`w-5 h-5 transition-transform ${activeTab === 'purchases' ? 'scale-110 stroke-[2.5]' : ''}`} />
+              <span className="text-[10px] sm:text-[11px] font-bold mt-1">مشترياتي</span>
+            </button>
+
+            {/* 6. Profile / الملف (Requires Login) */}
             {isLoggedIn ? (
               <button
-                onClick={() => onSelectTab('purchases')}
+                onClick={() => onSelectTab('profile')}
                 className={`flex flex-col items-center justify-center flex-1 py-1.5 transition select-none ${
-                  activeTab === 'purchases'
+                  activeTab === 'profile'
                     ? 'text-emerald-600 dark:text-emerald-400'
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
-                <PackageCheck className={`w-5 h-5 transition-transform ${activeTab === 'purchases' ? 'scale-110 stroke-[2.5]' : ''}`} />
-                <span className="text-[11px] font-bold mt-1">مشترياتي</span>
+                <img
+                  src={currentUser.avatar}
+                  alt={currentUser.displayName}
+                  className={`w-6 h-6 rounded-full object-cover ring-2 transition-transform ${
+                    activeTab === 'profile'
+                      ? 'ring-emerald-600 scale-110'
+                      : 'ring-transparent hover:ring-slate-300'
+                  }`}
+                />
+                <span className="text-[10px] sm:text-[11px] font-bold mt-1">الملف</span>
               </button>
             ) : (
               <button
@@ -253,7 +280,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
                 className="flex flex-col items-center justify-center flex-1 py-1.5 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 transition select-none"
               >
                 <LogIn className="w-5 h-5" />
-                <span className="text-[11px] font-bold mt-1">دخول</span>
+                <span className="text-[10px] sm:text-[11px] font-bold mt-1">دخول</span>
               </button>
             )}
 

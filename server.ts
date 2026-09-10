@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import Stripe from "stripe";
 import { Resend } from "resend";
@@ -10,7 +11,39 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+// Persistent File-Based Storage for Posts & Products
+const DATA_DIR = path.join(process.cwd(), "data");
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+const POSTS_FILE = path.join(DATA_DIR, "posts.json");
+const PRODUCTS_FILE = path.join(DATA_DIR, "products.json");
+
+function readJsonFile<T>(filePath: string, defaultValue: T): T {
+  try {
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, "utf8");
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error(`Error reading ${filePath}:`, err);
+  }
+  return defaultValue;
+}
+
+function writeJsonFile<T>(filePath: string, data: T): boolean {
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
+    return true;
+  } catch (err) {
+    console.error(`Error writing ${filePath}:`, err);
+    return false;
+  }
+}
 
 // Lazy-initialized SDK clients to prevent startup crashes if environment variables are missing
 let stripeClient: Stripe | null = null;
@@ -253,6 +286,82 @@ app.post("/api/security/scan-url", async (req, res) => {
       scannedBy: "Fallback Heuristics",
       error: error.message
     });
+  }
+});
+
+// 6. Posts Persistence APIs
+app.get("/api/posts", (req, res) => {
+  const posts = readJsonFile<any[]>(POSTS_FILE, []);
+  res.json(posts);
+});
+
+app.post("/api/posts", (req, res) => {
+  try {
+    const post = req.body;
+    if (!post || !post.id) {
+      return res.status(400).json({ error: "Invalid post data provided" });
+    }
+    const posts = readJsonFile<any[]>(POSTS_FILE, []);
+    const existingIndex = posts.findIndex(p => p.id === post.id);
+    if (existingIndex >= 0) {
+      posts[existingIndex] = { ...posts[existingIndex], ...post };
+    } else {
+      posts.unshift(post);
+    }
+    writeJsonFile(POSTS_FILE, posts);
+    res.json({ success: true, post });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to save post" });
+  }
+});
+
+app.delete("/api/posts/:id", (req, res) => {
+  try {
+    const { id } = req.params;
+    let posts = readJsonFile<any[]>(POSTS_FILE, []);
+    posts = posts.filter(p => p.id !== id);
+    writeJsonFile(POSTS_FILE, posts);
+    res.json({ success: true, id });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to delete post" });
+  }
+});
+
+// 7. Products Persistence APIs
+app.get("/api/products", (req, res) => {
+  const products = readJsonFile<any[]>(PRODUCTS_FILE, []);
+  res.json(products);
+});
+
+app.post("/api/products", (req, res) => {
+  try {
+    const product = req.body;
+    if (!product || !product.id) {
+      return res.status(400).json({ error: "Invalid product data provided" });
+    }
+    const products = readJsonFile<any[]>(PRODUCTS_FILE, []);
+    const existingIndex = products.findIndex(p => p.id === product.id);
+    if (existingIndex >= 0) {
+      products[existingIndex] = { ...products[existingIndex], ...product };
+    } else {
+      products.unshift(product);
+    }
+    writeJsonFile(PRODUCTS_FILE, products);
+    res.json({ success: true, product });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to save product" });
+  }
+});
+
+app.delete("/api/products/:id", (req, res) => {
+  try {
+    const { id } = req.params;
+    let products = readJsonFile<any[]>(PRODUCTS_FILE, []);
+    products = products.filter(p => p.id !== id);
+    writeJsonFile(PRODUCTS_FILE, products);
+    res.json({ success: true, id });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to delete product" });
   }
 });
 
