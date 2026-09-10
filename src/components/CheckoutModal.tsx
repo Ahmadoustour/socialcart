@@ -47,6 +47,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [otpCode, setOtpCode] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Bank testing simulation: Insufficient funds check
+  const [simulateInsufficientFunds, setSimulateInsufficientFunds] = useState(false);
+
   if (!isOpen) return null;
 
   const totalAmount = items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
@@ -80,23 +83,51 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setStep(3);
   };
 
-  // Step 3 to Step 4 (Confirm OTP and execute purchase)
-  const handleConfirm3DSecure = () => {
+  // Step 3 to Step 4 (Confirm OTP and execute purchase via Stripe Gateway)
+  const handleConfirm3DSecure = async () => {
     if (otpCode.length < 4) {
       alert('يرجى إدخال رمز التحقق المصرفي المكون من 6 أرقام (أو اكتب 1234)');
       return;
     }
 
     setIsProcessing(true);
-    setTimeout(() => {
+
+    try {
+      const response = await fetch('/api/payment/verify-and-charge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: totalAmount,
+          cardNumber: paymentChoice === 'saved' ? '4242424242424242' : newCardNumber,
+          expiry: paymentChoice === 'saved' ? '12/28' : newExpiry,
+          cvv: paymentChoice === 'saved' ? '123' : newCvv,
+          customerEmail: currentUser.email,
+          simulateDeclined: simulateInsufficientFunds || (newCardNumber && newCardNumber.replace(/\D/g, '').endsWith('0002'))
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        setIsProcessing(false);
+        setCardError(data.message || `❌ رفض البنك المعاملة: رصيد البطاقة غير كافٍ أو البطاقة غير مقبولة.`);
+        setStep(2);
+        return;
+      }
+
       setIsProcessing(false);
       setStep(4);
       onCheckoutComplete({
         items,
         totalPaid: totalAmount,
-        paymentMethod: paymentChoice === 'saved' ? `Visa (${currentUser.savedCard?.last4 || '4242'})` : 'بطاقة ائتمان جديدة'
+        paymentMethod: paymentChoice === 'saved' ? `Visa (${currentUser.savedCard?.last4 || '4242'}) - Stripe` : 'Stripe Card Gateway'
       });
-    }, 1200);
+    } catch (err: any) {
+      setIsProcessing(false);
+      // Fallback in case offline or server issue
+      setCardError(`❌ تعذر إتمام المعالجة البنكية: ${err.message || 'خطأ في الاتصال'}`);
+      setStep(2);
+    }
   };
 
   return (
@@ -276,6 +307,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* Bank Balance Scenario Tester */}
+            <div className="p-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl space-y-1.5">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={simulateInsufficientFunds}
+                  onChange={(e) => setSimulateInsufficientFunds(e.target.checked)}
+                  className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                />
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                  🧪 تجربة محاكاة بطاقة بدون رصيد كافٍ (رفض المعاملة من البنك)
+                </span>
+              </label>
+              <p className="text-[10px] text-slate-400 mr-6">
+                عند تفعيل هذا الخيار، سيتم محاكاة رفض البنك للشراء بسبب عدم توفر الرصيد كما في بوابات الدفع الحقيقية.
+              </p>
             </div>
 
             {cardError && (

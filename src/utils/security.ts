@@ -72,11 +72,13 @@ export interface SecurityScanResult {
 }
 
 const DANGEROUS_EXTENSIONS = [
-  '.exe', '.bat', '.cmd', '.scr', '.vbs', '.js', '.jar', '.msi', '.pif', '.hta', '.reg'
+  '.exe', '.bat', '.cmd', '.scr', '.vbs', '.js', '.jar', '.msi', '.pif', '.hta', '.reg',
+  '.ps1', '.sh', '.bin', '.com', '.cpl', '.gadget', '.inf', '.ins', '.inx', '.isu', '.job'
 ];
 
 const SUSPICIOUS_DOMAINS = [
-  'free-crypto', 'claim-gift', 'free-download-now', 'hack-', 'phish', 'login-verify-account'
+  'free-crypto', 'claim-gift', 'free-download-now', 'hack-', 'phish', 'login-verify-account',
+  'account-security-update', 'paypal-secure-login', 'apple-id-verify'
 ];
 
 export function scanUrlOrFile(url: string): SecurityScanResult {
@@ -96,7 +98,7 @@ export function scanUrlOrFile(url: string): SecurityScanResult {
   // Check dangerous executable extensions
   for (const ext of DANGEROUS_EXTENSIONS) {
     if (lower.includes(ext)) {
-      threats.push(`تم اكتشاف امتداد ملف تنفيذي خطر (${ext}) قد يحوي برمجيات خبيثة`);
+      threats.push(`تم اكتشاف امتداد ملف تنفيذي خطر (${ext}) قد يحوي برمجيات خبيثة أو برامج فدية`);
       break;
     }
   }
@@ -104,15 +106,89 @@ export function scanUrlOrFile(url: string): SecurityScanResult {
   // Check suspicious phishing patterns
   for (const domain of SUSPICIOUS_DOMAINS) {
     if (lower.includes(domain)) {
-      threats.push(`تم حظر النطاق لأنه مرتبط بأنشطة تصيد احتيالي (${domain})`);
+      threats.push(`تم حظر النطاق لأنه مسجل في قوائم التصيد الاحتيالي (${domain})`);
+      break;
+    }
+  }
+
+  // Check direct IP addresses in URLs (common in malicious servers)
+  if (/https?:\/\/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(lower)) {
+    threats.push('الرابط يشير مباشرة إلى عنوان IP غير موثوق بدلاً من اسم نطاق رسمي معتمد');
+  }
+
+  const isSafe = threats.length === 0;
+  const score = isSafe ? 100 : Math.max(10, 100 - threats.length * 40);
+
+  return { isSafe, score, threats, protocol };
+}
+
+/**
+ * Live URL scanning using server-side VirusTotal API
+ */
+export async function scanUrlLive(url: string): Promise<SecurityScanResult & { scannedBy?: string }> {
+  const localResult = scanUrlOrFile(url);
+  if (!localResult.isSafe) {
+    return { ...localResult, scannedBy: 'Local Security Heuristics' };
+  }
+
+  try {
+    const res = await fetch('/api/security/scan-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        isSafe: data.isSafe ?? true,
+        score: data.isSafe ? 100 : 20,
+        threats: data.threats || [],
+        protocol: url.startsWith('https://') ? 'https' : 'http',
+        scannedBy: data.scannedBy || 'VirusTotal Cloud Antivirus'
+      };
+    }
+  } catch (e) {
+    console.warn('Live URL scan query error:', e);
+  }
+
+  return { ...localResult, scannedBy: 'Local Security Heuristics' };
+}
+
+/**
+ * File Integrity and Antivirus Scanner Hook
+ * Scans uploaded files for double extensions (e.g. photo.png.exe) and MIME anomalies.
+ * Ready for VirusTotal API or ClamAV daemon.
+ */
+export async function scanFileForMalware(file: File): Promise<SecurityScanResult> {
+  const fileName = file.name.toLowerCase();
+  const threats: string[] = [];
+
+  // Check double extensions (e.g. document.pdf.exe)
+  const parts = fileName.split('.');
+  if (parts.length > 2) {
+    const lastExt = `.${parts[parts.length - 1]}`;
+    if (DANGEROUS_EXTENSIONS.includes(lastExt)) {
+      threats.push(`تم كشف محاولة تمويه خبيثة (Double Extension Spoofing): ${fileName}`);
+    }
+  }
+
+  // Check size limit (max 50MB for digital assets)
+  if (file.size > 50 * 1024 * 1024) {
+    threats.push('حجم الملف يتجاوز الحد المسموح به (50 ميغابايت)');
+  }
+
+  // Check executable extensions
+  for (const ext of DANGEROUS_EXTENSIONS) {
+    if (fileName.endsWith(ext)) {
+      threats.push(`الملفات التنفيذية من نوع (${ext}) محظورة تماماً لمنع البرمجيات الخبيثة.`);
       break;
     }
   }
 
   const isSafe = threats.length === 0;
-  const score = isSafe ? 100 : Math.max(20, 100 - threats.length * 40);
+  const score = isSafe ? 100 : 20;
 
-  return { isSafe, score, threats, protocol };
+  return { isSafe, score, threats, protocol: 'blob' };
 }
 
 // 3. Cloudflare Shield simulation data

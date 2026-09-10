@@ -13,6 +13,9 @@ export const CURRENT_USER: User = {
   sellerReviewsCount: 38,
   totalSales: 124,
   trustScore: 99,
+  password: 'Password123!',
+  isEmailVerified: true,
+  twoFactorEnabled: false,
   savedCard: {
     cardNumber: '•••• •••• •••• 4242',
     cardHolder: 'AHMED AL-TAMIMI',

@@ -12,6 +12,9 @@ export interface User {
   totalSales: number;
   trustScore: number; // e.g. 98%
   savedCard?: SavedCard;
+  password?: string;
+  isEmailVerified?: boolean;
+  twoFactorEnabled?: boolean;
 }
 
 export interface SavedCard {
