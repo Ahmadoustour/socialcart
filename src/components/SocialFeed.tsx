@@ -53,61 +53,6 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-12 animate-fadeIn">
-      
-      {/* Creator Highlights / Stories Bar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            رواد المجتمع والناشرون الموثوقون
-          </span>
-          <span className="text-[11px] text-slate-400">قصص اليوم</span>
-        </div>
-
-        <div className="flex items-center gap-4 overflow-x-auto pb-2 scrollbar-none">
-          {/* Current user add story */}
-          <div 
-            onClick={onOpenCreatePost}
-            className="flex flex-col items-center gap-1.5 cursor-pointer shrink-0 group"
-          >
-            <div className="relative">
-              <img
-                src={currentUser.avatar}
-                alt={currentUser.displayName}
-                className="w-14 h-14 rounded-full object-cover ring-2 ring-indigo-600 dark:ring-indigo-500 p-0.5"
-              />
-              <div className="absolute -bottom-1 -right-1 bg-indigo-600 text-white rounded-full p-1 shadow">
-                <ImageIcon className="w-3 h-3" />
-              </div>
-            </div>
-            <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300">أضف قصتك</span>
-          </div>
-
-          {/* Community Active Creators from real posts */}
-          {Array.from(new Map<string, User>(posts.map(p => [p.author.username, p.author])).values())
-            .filter((author: User) => author.username !== currentUser.username)
-            .slice(0, 6)
-            .map((author: User, idx) => (
-              <div 
-                key={author.id || idx} 
-                onClick={() => onOpenDirectChat(author.username, author.displayName, author.avatar)}
-                className="flex flex-col items-center gap-1.5 cursor-pointer shrink-0 hover:opacity-90 transition"
-                title={`مراسلة @${author.username}`}
-              >
-                <div className="relative">
-                  <img
-                    src={author.avatar}
-                    alt={author.displayName}
-                    className="w-14 h-14 rounded-full object-cover p-0.5 ring-2 ring-emerald-500/70 shadow-sm"
-                  />
-                  <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900" />
-                </div>
-                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400">@{author.username}</span>
-              </div>
-            ))}
-        </div>
-      </div>
-
       {/* Quick Share Box */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
         <div className="flex items-center gap-3">
