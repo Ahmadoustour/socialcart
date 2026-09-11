@@ -21,7 +21,8 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
-  updateProfile
+  updateProfile,
+  signOut
 } from 'firebase/auth';
 
 interface AuthModalProps {
@@ -388,6 +389,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       console.warn('Server uniqueness check notice:', chkErr);
     }
 
+    // 3. Clear any previous session and sign out of Firebase before creating a new account
+    localStorage.removeItem('socialcart_user');
+    try {
+      await signOut(auth);
+    } catch {}
+
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, regPassword);
       const fbUser = userCredential.user;
@@ -416,6 +423,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         twoFactorEnabled: false
       };
 
+      // Ensure local state is immediately assigned to this brand-new user
+      localStorage.setItem('socialcart_user', JSON.stringify(newUser));
+      localStorage.setItem('socialcart_logged_in', 'true');
+
       // Also persist locally for fast offline retrieval and to server
       savedUsers.push(newUser);
       localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
@@ -426,7 +437,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         body: JSON.stringify({ ...newUser, isRegistration: true })
       }).catch(() => {});
 
-      setSuccessMsg(`تهانينا يا ${cleanName}! تم إنشاء حسابك وتوثيقه بنجاح 🛡️`);
+      setSuccessMsg(`تهانينا يا ${cleanName}! تم إنشاء حسابك الجديد بنجاح 🛡️`);
       setTimeout(() => {
         onLoginSuccess(newUser);
         onClose();
@@ -467,6 +478,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           twoFactorEnabled: false
         };
 
+        // Ensure local state is immediately assigned to this brand-new user
+        localStorage.setItem('socialcart_user', JSON.stringify(newUser));
+        localStorage.setItem('socialcart_logged_in', 'true');
+
         // Try backend registration with isRegistration flag
         try {
           const srvRes = await fetch('/api/users', {
@@ -488,7 +503,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         freshUsers.push(newUser);
         localStorage.setItem('socialcart_registered_users', JSON.stringify(freshUsers));
 
-        setSuccessMsg(`تم إنشاء حسابك بنجاح يا ${cleanName}!`);
+        setSuccessMsg(`تم إنشاء حسابك الجديد بنجاح يا ${cleanName}!`);
         setTimeout(() => {
           onLoginSuccess(newUser);
           onClose();
@@ -683,24 +698,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           /* REGISTER FORM */
           <form onSubmit={handleRegisterSubmit} className="space-y-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                الاسم الكامل أو اسم المتجر
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  الاسم الشخصي أو اسم المتجر (الاسم الظاهر)
+                </label>
+                <span className="text-[10px] text-slate-400 font-normal">يظهر في ملفك ومنشوراتك</span>
+              </div>
               <input
                 type="text"
                 value={regDisplayName}
                 onChange={e => setRegDisplayName(e.target.value)}
                 placeholder="مثال: عبد الله السعيد"
                 className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                required
               />
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  اسم المستخدم (@)
+                  اسم المستخدم الفريد (@Username)
                 </label>
-                <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">متصل بدون مسافات</span>
+                <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">معرّف خاص بك لا يتكرر</span>
               </div>
               <input
                 type="text"
@@ -716,11 +735,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 }}
                 placeholder="abdullah_dev"
                 autoComplete="username"
+                dir="ltr"
                 className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono"
                 required
               />
               <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
-                اسم المستخدم يجب أن يكون متصلاً تماماً دون أي مسافات (أحرف إنجليزية، أرقام، أو _ .).
+                معرف إنجليزي متصل تماماً بدون مسافات، يخص حسابك هذا فقط ولا يمكن أن يتطابق مع مستخدم آخر.
               </p>
             </div>
 

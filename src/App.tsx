@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Lock } from 'lucide-react';
 import { Header } from './components/Header';
 import { SocialFeed } from './components/SocialFeed';
@@ -173,6 +173,39 @@ export default function App() {
   });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+
+  // Collect all known usernames and emails for strict registration uniqueness validation
+  const allRegisteredUsernames = useMemo(() => {
+    const list: string[] = [];
+    const registeredStr = localStorage.getItem('socialcart_registered_users');
+    if (registeredStr) {
+      try {
+        const parsed = JSON.parse(registeredStr);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((u: any) => {
+            if (u && u.username) list.push(u.username);
+          });
+        }
+      } catch {}
+    }
+    return list;
+  }, [isAuthModalOpen]);
+
+  const allRegisteredEmails = useMemo(() => {
+    const list: string[] = [];
+    const registeredStr = localStorage.getItem('socialcart_registered_users');
+    if (registeredStr) {
+      try {
+        const parsed = JSON.parse(registeredStr);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((u: any) => {
+            if (u && u.email) list.push(u.email);
+          });
+        }
+      } catch {}
+    }
+    return list;
+  }, [isAuthModalOpen]);
 
   // Core State
   const [currentUser, setCurrentUser] = useState<User>(() => {
@@ -385,7 +418,15 @@ export default function App() {
         if (savedUserStr) {
           try {
             const parsed = JSON.parse(savedUserStr);
-            if (parsed && parsed.id !== 'guest') existingUser = parsed;
+            // CRITICAL BUGFIX: Never ever use parsed user data unless the ID or email matches fbUser!
+            // Otherwise switching users or registering a new account gets contaminated with the previous user!
+            if (
+              parsed &&
+              parsed.id !== 'guest' &&
+              (parsed.id === fbUser.uid || (parsed.email && fbUser.email && parsed.email.toLowerCase() === fbUser.email.toLowerCase()))
+            ) {
+              existingUser = parsed;
+            }
           } catch {}
         }
 
@@ -396,30 +437,25 @@ export default function App() {
         }
         const matchedReg = registeredUsers.find(u => 
           (u.id && u.id === fbUser.uid) || 
-          (existingUser.email && u.email?.toLowerCase() === existingUser.email.toLowerCase()) ||
-          (fbUser.email && u.email?.toLowerCase() === fbUser.email.toLowerCase())
+          (fbUser.email && u.email && u.email.toLowerCase() === fbUser.email.toLowerCase())
         );
 
-        // Also check if server has saved profile
+        // Also check if server has saved profile for this specific user
         let serverUser: Partial<User> = {};
         try {
           const res = await fetch(`/api/users/${encodeURIComponent(fbUser.uid)}`);
           if (res.ok) {
             serverUser = await res.json();
-          } else if (existingUser.email) {
-            const res2 = await fetch(`/api/users/${encodeURIComponent(existingUser.email)}`);
-            if (res2.ok) serverUser = await res2.json();
           } else if (fbUser.email) {
             const res3 = await fetch(`/api/users/${encodeURIComponent(fbUser.email)}`);
             if (res3.ok) serverUser = await res3.json();
           }
         } catch {}
 
-        // CRITICAL BUGFIX: User's explicitly updated email in existingUser MUST take priority over fbUser.email!
-        // Otherwise on page reload fbUser.email (Firebase Auth token) overrides the updated email!
-        const resolvedEmail = existingUser.email || serverUser.email || matchedReg?.email || fbUser.email || '';
+        // Priority resolution: Firebase auth email or explicit matched email
+        const resolvedEmail = fbUser.email || existingUser.email || serverUser.email || matchedReg?.email || '';
 
-        // CRITICAL BUGFIX: Card state must strictly respect explicit deletions (null) and updates
+        // Card state must strictly respect explicit deletions (null) and updates
         let resolvedCard: SavedCard | null = null;
         if (existingUser.savedCard !== undefined) {
           resolvedCard = existingUser.savedCard;
@@ -429,10 +465,13 @@ export default function App() {
           resolvedCard = matchedReg.savedCard;
         }
 
+        const resolvedUsername = matchedReg?.username || serverUser.username || existingUser.username || (fbUser.displayName ? fbUser.displayName.toLowerCase().replace(/\s+/g, '_') : (resolvedEmail ? resolvedEmail.split('@')[0] : 'user'));
+        const resolvedDisplayName = fbUser.displayName || matchedReg?.displayName || serverUser.displayName || existingUser.displayName || (resolvedEmail ? resolvedEmail.split('@')[0] : 'مستخدم مسجل');
+
         const mergedUser: User = {
           id: fbUser.uid,
-          username: existingUser.username || matchedReg?.username || serverUser.username || (fbUser.displayName ? fbUser.displayName.toLowerCase().replace(/\s+/g, '_') : (resolvedEmail ? resolvedEmail.split('@')[0] : 'user')),
-          displayName: existingUser.displayName || matchedReg?.displayName || serverUser.displayName || fbUser.displayName || (resolvedEmail ? resolvedEmail.split('@')[0] : 'مستخدم مسجل'),
+          username: resolvedUsername,
+          displayName: resolvedDisplayName,
           email: resolvedEmail,
           avatar: existingUser.avatar || matchedReg?.avatar || serverUser.avatar || fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
           bio: existingUser.bio !== undefined ? existingUser.bio : (matchedReg?.bio !== undefined ? matchedReg.bio : (serverUser.bio !== undefined ? serverUser.bio : '')),
@@ -524,15 +563,20 @@ export default function App() {
     if (registeredStr) {
       try { registeredUsers = JSON.parse(registeredStr); } catch {}
     }
+    // Only match existing user by EXACT id or EXACT email.
+    // NEVER match by username alone when receiving an authenticated user object!
     const existing = registeredUsers.find(u => 
-      u.id === user.id || 
-      (u.email && user.email && u.email.toLowerCase() === user.email.toLowerCase()) ||
-      (u.username && user.username && u.username.toLowerCase() === user.username.toLowerCase())
+      (u.id && user.id && u.id === user.id) || 
+      (u.email && user.email && u.email.toLowerCase() === user.email.toLowerCase())
     );
 
     const mergedUser: User = existing ? {
       ...existing,
       ...user,
+      id: user.id || existing.id,
+      email: user.email || existing.email,
+      username: user.username || existing.username,
+      displayName: user.displayName || existing.displayName,
       password: user.password || existing.password,
       savedCard: user.savedCard !== undefined ? user.savedCard : (existing.savedCard ?? null),
       bio: user.bio !== undefined ? user.bio : existing.bio,
@@ -543,7 +587,7 @@ export default function App() {
     localStorage.setItem('socialcart_logged_in', 'true');
     localStorage.setItem('socialcart_user', JSON.stringify(mergedUser));
 
-    const idx = registeredUsers.findIndex(u => u.id === mergedUser.id || (u.email && u.email.toLowerCase() === mergedUser.email.toLowerCase()));
+    const idx = registeredUsers.findIndex(u => (u.id && mergedUser.id && u.id === mergedUser.id) || (u.email && mergedUser.email && u.email.toLowerCase() === mergedUser.email.toLowerCase()));
     if (idx >= 0) {
       registeredUsers[idx] = { ...registeredUsers[idx], ...mergedUser };
     } else {
@@ -585,6 +629,7 @@ export default function App() {
     setCurrentUser(user);
     setIsLoggedIn(true);
     localStorage.setItem('socialcart_logged_in', 'true');
+    localStorage.setItem('socialcart_user', JSON.stringify(user));
   };
 
   // Apply dark mode class to HTML
@@ -1858,6 +1903,8 @@ export default function App() {
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         onLoginSuccess={handleLoginSuccess}
+        registeredUsernames={allRegisteredUsernames}
+        registeredEmails={allRegisteredEmails}
       />
 
       {/* 8. Account Menu Drawer (Profile, Orders, Logout) */}
