@@ -203,28 +203,38 @@ app.post("/api/email/send-otp", async (req, res) => {
           `
         });
 
+        if (data.error) {
+          console.warn("Resend email response warning:", data.error);
+          return res.json({
+            success: true,
+            code,
+            deliveryStatus: "provider_restriction",
+            message: `ملاحظة مزود البريد (Resend): ${data.error.message}`
+          });
+        }
+
         return res.json({
           success: true,
           code,
+          deliveryStatus: "sent",
           deliveryId: data.data?.id,
-          mode: "live_email_sent",
           message: `تم إرسال رمز التحقق بنجاح إلى بريدك الإلكتروني (${email}).`
         });
       } catch (sendErr: any) {
-        console.warn("Resend email dispatch note:", sendErr.message);
+        console.warn("Resend email dispatch error:", sendErr.message);
         return res.json({
           success: true,
           code,
-          mode: "live_email_sent",
-          message: `تم إرسال رمز التحقق بنجاح إلى بريدك الإلكتروني (${email}).`
+          deliveryStatus: "error",
+          message: `تعذر الإرسال عبر المزود: ${sendErr.message}`
         });
       }
     } else {
-      res.json({
+      return res.json({
         success: true,
         code,
-        mode: "live_email_sent",
-        message: `تم إرسال رمز التحقق بنجاح إلى بريدك الإلكتروني (${email}).`
+        deliveryStatus: "key_missing",
+        message: `مفتاح RESEND_API_KEY غير مضاف في إعدادات البيئة لإرسال البريد الخارجي الفعلي.`
       });
     }
   } catch (error: any) {
@@ -361,11 +371,17 @@ app.post("/api/email/security-alert", async (req, res) => {
 
         if (sendResult.error) {
           console.warn("Resend Security Alert response warning:", sendResult.error);
+          return res.json({
+            success: true,
+            deliveryStatus: "provider_restriction",
+            otpCode,
+            message: `ملاحظة مزود البريد (Resend): ${sendResult.error.message}`
+          });
         }
 
         return res.json({
           success: true,
-          mode: "live_email_sent",
+          deliveryStatus: "sent",
           deliveryId: sendResult.data?.id,
           message: `تم إرسال رسالة الأمان ورمز التحقق إلى بريدك الإلكتروني (${email}) بنجاح.`
         });
@@ -373,15 +389,17 @@ app.post("/api/email/security-alert", async (req, res) => {
         console.warn("Resend Security Alert dispatch note:", sendErr.message);
         return res.json({
           success: true,
-          mode: "live_email_sent",
-          message: `تم إرسال رسالة الأمان ورمز التحقق إلى بريدك الإلكتروني (${email}) بنجاح.`
+          deliveryStatus: "error",
+          otpCode,
+          message: `تعذر الإرسال عبر المزود: ${sendErr.message}`
         });
       }
     } else {
       return res.json({
         success: true,
-        mode: "live_email_sent",
-        message: `تم إرسال رسالة الأمان ورمز التحقق إلى بريدك الإلكتروني (${email}) بنجاح.`
+        deliveryStatus: "key_missing",
+        otpCode,
+        message: `تنبيه: مفتاح RESEND_API_KEY غير مضاف في إعدادات البيئة لإرسال البريد الخارجي الفعلي عبر الإنترنت.`
       });
     }
   } catch (error: any) {

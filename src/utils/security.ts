@@ -306,7 +306,7 @@ export async function sendSecurityAlertEmail(params: {
   oldEmail?: string;
   newEmail?: string;
   otpCode?: string;
-}): Promise<{ success: boolean; message: string }> {
+}): Promise<{ success: boolean; message: string; deliveryStatus?: string; otpCode?: string }> {
   try {
     const res = await fetch('/api/email/security-alert', {
       method: 'POST',
@@ -315,7 +315,12 @@ export async function sendSecurityAlertEmail(params: {
     });
     if (res.ok) {
       const data = await res.json();
-      return { success: true, message: data.message || 'تم إرسال الإشعار الأمني بنجاح.' };
+      return {
+        success: true,
+        message: data.message || 'تم إرسال الإشعار الأمني بنجاح.',
+        deliveryStatus: data.deliveryStatus,
+        otpCode: data.otpCode
+      };
     }
   } catch (err: any) {
     console.warn('Security alert request failed:', err);

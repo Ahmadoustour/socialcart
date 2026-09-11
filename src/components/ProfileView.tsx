@@ -334,28 +334,35 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       setIsEmailChangeModalOpen(true);
 
       // 1. Send OTP verification code to the CURRENT (OLD) email for security authorization!
+      const targetEmail = currentUser.email ? currentUser.email : cleanEmail;
       sendSecurityAlertEmail({
-        email: currentUser.email,
+        email: targetEmail,
         username: displayName.trim() || currentUser.displayName,
         actionType: 'email_change_requested',
-        oldEmail: currentUser.email,
+        oldEmail: currentUser.email || cleanEmail,
         newEmail: cleanEmail,
         otpCode: code
       }).then(res => {
         setIsSendingEmailChangeOtp(false);
-        setEmailChangeOtpNotice(res.message);
+        if (res.deliveryStatus === 'key_missing' || res.deliveryStatus === 'provider_restriction') {
+          setEmailChangeOtpNotice(`${res.message} (رمز المتابعة: ${code})`);
+        } else {
+          setEmailChangeOtpNotice(res.message);
+        }
       }).catch(() => {
         setIsSendingEmailChangeOtp(false);
       });
 
-      // 2. Also notify the new email that it has been requested to link
-      sendSecurityAlertEmail({
-        email: cleanEmail,
-        username: displayName.trim() || currentUser.displayName,
-        actionType: 'email_change_requested',
-        oldEmail: currentUser.email,
-        newEmail: cleanEmail
-      });
+      // 2. Also notify the new email if distinct
+      if (currentUser.email && cleanEmail) {
+        sendSecurityAlertEmail({
+          email: cleanEmail,
+          username: displayName.trim() || currentUser.displayName,
+          actionType: 'email_change_requested',
+          oldEmail: currentUser.email,
+          newEmail: cleanEmail
+        }).catch(() => {});
+      }
 
       return;
     }
@@ -420,16 +427,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setSentEmailChangeOtp(code);
     setIsSendingEmailChangeOtp(true);
+    const targetEmail = currentUser.email ? currentUser.email : pendingNewEmail;
     sendSecurityAlertEmail({
-      email: currentUser.email,
+      email: targetEmail,
       username: displayName.trim() || currentUser.displayName,
       actionType: 'email_change_requested',
-      oldEmail: currentUser.email,
+      oldEmail: currentUser.email || pendingNewEmail,
       newEmail: pendingNewEmail,
       otpCode: code
     }).then(res => {
       setIsSendingEmailChangeOtp(false);
-      setEmailChangeOtpNotice(res.message);
+      if (res.deliveryStatus === 'key_missing' || res.deliveryStatus === 'provider_restriction') {
+        setEmailChangeOtpNotice(`${res.message} (رمز المتابعة: ${code})`);
+      } else {
+        setEmailChangeOtpNotice(res.message);
+      }
     }).catch(() => {
       setIsSendingEmailChangeOtp(false);
     });
@@ -586,7 +598,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       otpCode: code
     }).then(res => {
       setIsSendingCardOtp(false);
-      setCardOtpNotice(res.message);
+      if (res.deliveryStatus === 'key_missing' || res.deliveryStatus === 'provider_restriction') {
+        setCardOtpNotice(`${res.message} (رمز المتابعة: ${code})`);
+      } else {
+        setCardOtpNotice(res.message);
+      }
     }).catch(() => {
       setIsSendingCardOtp(false);
     });
@@ -615,7 +631,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       otpCode: code
     }).then(res => {
       setIsSendingCardOtp(false);
-      setCardOtpNotice(res.message);
+      if (res.deliveryStatus === 'key_missing' || res.deliveryStatus === 'provider_restriction') {
+        setCardOtpNotice(`${res.message} (رمز المتابعة: ${code})`);
+      } else {
+        setCardOtpNotice(res.message);
+      }
     }).catch(() => {
       setIsSendingCardOtp(false);
     });
@@ -693,7 +713,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       otpCode: code
     }).then(res => {
       setIsSendingCardOtp(false);
-      setCardOtpNotice('تمت إعادة إرسال رمز التحقق الأمني إلى بريدك الإلكتروني بنجاح.');
+      if (res.deliveryStatus === 'key_missing' || res.deliveryStatus === 'provider_restriction') {
+        setCardOtpNotice(`${res.message} (رمز المتابعة: ${code})`);
+      } else {
+        setCardOtpNotice('تمت إعادة إرسال رمز التحقق الأمني إلى بريدك الإلكتروني بنجاح.');
+      }
     }).catch(() => {
       setIsSendingCardOtp(false);
       setCardOtpNotice('تم توليد رمز تحقق أمني جديد.');
@@ -2127,17 +2151,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="space-y-4">
               <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs space-y-2">
                 <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
-                  <span>البريد الحالي:</span>
-                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{currentUser.email}</span>
+                  <span>البريد الحالي (المسجل):</span>
+                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{currentUser.email || 'غير مسجل مسبقاً'}</span>
                 </div>
                 <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
-                  <span>البريد الجديد:</span>
+                  <span>البريد الجديد المطلوب:</span>
                   <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">{pendingNewEmail}</span>
                 </div>
               </div>
 
               <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                لحماية حسابك من الاختراق والاستيلاء غير المصرح به، تم إرسال رمز التحقق (OTP) المكوّن من 6 أرقام إلى بريدك الإلكتروني الحالي والمسجل لدينا <strong className="text-indigo-600 dark:text-indigo-400 font-mono">{currentUser.email}</strong>. يرجى كتابة الرمز لتأكيد ملكيتك للحساب والموافقة على التحويل إلى البريد الجديد:
+                {currentUser.email ? (
+                  <>
+                    لحماية حسابك من الاختراق والاستيلاء غير المصرح به، تم إرسال رمز التحقق (OTP) المكوّن من 6 أرقام إلى بريدك الإلكتروني الحالي والمسجل لدينا <strong className="text-indigo-600 dark:text-indigo-400 font-mono">{currentUser.email}</strong> لتأكيد ملكيتك للحساب والموافقة على التحويل إلى البريد الجديد:
+                  </>
+                ) : (
+                  <>
+                    لتأكيد وتوثيق بريدك الإلكتروني الجديد، تم إرسال رمز التحقق (OTP) المكوّن من 6 أرقام إلى البريد <strong className="text-indigo-600 dark:text-indigo-400 font-mono">{pendingNewEmail}</strong>:
+                  </>
+                )}
               </p>
 
               <div>
