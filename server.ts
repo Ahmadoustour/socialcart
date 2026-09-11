@@ -2,7 +2,6 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import Stripe from "stripe";
-import { Resend } from "resend";
 import nodemailer, { type Transporter } from "nodemailer";
 import dotenv from "dotenv";
 
@@ -38,14 +37,25 @@ app.use((req, res, next) => {
 
 // Support pre-parsed bodies from serverless platform environments (e.g. Vercel)
 app.use((req, res, next) => {
-  if (req.body && typeof req.body === "object" && Object.keys(req.body).length > 0) {
+  if (req.body !== undefined && req.body !== null && typeof req.body === "object") {
     (req as any)._body = true;
   }
   next();
 });
 
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use((req, res, next) => {
+  if ((req as any)._body) {
+    return next();
+  }
+  express.json({ limit: "50mb" })(req, res, next);
+});
+
+app.use((req, res, next) => {
+  if ((req as any)._body) {
+    return next();
+  }
+  express.urlencoded({ extended: true, limit: "50mb" })(req, res, next);
+});
 
 // Persistent File-Based Storage with Vercel /tmp fallback
 const isVercel = Boolean(process.env.VERCEL);
@@ -97,14 +107,6 @@ function getStripe(): Stripe | null {
   return stripeClient;
 }
 
-let resendClient: Resend | null = null;
-function getResend(): Resend | null {
-  if (!resendClient && process.env.RESEND_API_KEY) {
-    resendClient = new Resend(process.env.RESEND_API_KEY);
-  }
-  return resendClient;
-}
-
 function getGmailTransporter(): Transporter | null {
   const rawUser = process.env.GMAIL_USER?.trim();
   const rawPass = process.env.GMAIL_APP_PASSWORD?.trim();
@@ -135,7 +137,7 @@ const lastOtpSentTimes = new Map<string, number>();
 
 let lastGmailError: string | null = null;
 
-// Unified Email Delivery Engine (Prioritizes Gmail SMTP for sending to any email globally)
+// Unified Email Delivery Engine - Exclusively uses Google Gmail SMTP
 async function sendSystemEmail({
   to,
   subject,
@@ -148,7 +150,7 @@ async function sendSystemEmail({
   const transporter = getGmailTransporter();
   const gmailUser = process.env.GMAIL_USER?.trim();
 
-  // 1. Primary: Direct Gmail SMTP Dispatch (Can send to ANY email address without domain limits!)
+  // Direct Gmail SMTP Dispatch (Sends to ANY email address globally)
   if (transporter && gmailUser) {
     try {
       const info = await transporter.sendMail({
@@ -167,67 +169,27 @@ async function sendSystemEmail({
       };
     } catch (gmailErr: any) {
       lastGmailError = gmailErr.message;
-      console.warn("⚠️ [Gmail SMTP Warning]:", gmailErr.message);
-    }
-  }
-
-  // 2. Secondary: Resend API Dispatch
-  const resend = getResend();
-  if (resend) {
-    try {
-      const data = await resend.emails.send({
-        from: "SocialCart Security <onboarding@resend.dev>",
-        to: [to],
-        subject,
-        html
-      });
-
-      if (data.error) {
-        console.warn("Resend email response warning:", data.error);
-        return {
-          success: true,
-          deliveryStatus: "provider_restriction",
-          message: `ملاحظة مزود البريد (Resend): ${data.error.message}`
-        };
-      }
-
-      return {
-        success: true,
-        deliveryStatus: "sent",
-        deliveryId: data.data?.id,
-        message: `تم إرسال رمز التحقق بنجاح إلى بريدك الإلكتروني (${to}).`
-      };
-    } catch (sendErr: any) {
-      console.warn("Resend email dispatch error:", sendErr.message);
+      console.warn("⚠️ [Gmail SMTP Error]:", gmailErr.message);
       return {
         success: false,
-        deliveryStatus: "error",
-        message: `تعذر الإرسال عبر المزود: ${sendErr.message}`
+        deliveryStatus: "gmail_error",
+        message: `فشل إرسال البريد عبر Gmail SMTP: ${gmailErr.message}. يرجى التحقق من صحة كلمة مرور التطبيقات في إعدادات البيئة على Vercel.`
       };
     }
-  }
-
-  // If Gmail attempted but failed, return the exact diagnostic message
-  if (lastGmailError) {
-    return {
-      success: false,
-      deliveryStatus: "gmail_error",
-      message: `فشل إرسال البريد عبر Gmail SMTP: ${lastGmailError}. يرجى التحقق من صحة كلمة مرور التطبيقات في إعدادات البيئة على Vercel.`
-    };
   }
 
   if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
     return {
       success: false,
       deliveryStatus: "key_missing",
-      message: `إعدادات GMAIL_USER أو GMAIL_APP_PASSWORD غير متوفرة في بيئة Vercel. يرجى إضافتها في Project Settings وعمل Redeploy.`
+      message: `إعدادات GMAIL_USER أو GMAIL_APP_PASSWORD غير متوفرة في بيئة Vercel. يرجى إضافتها في Project Settings -> Environment Variables ثم إعادة النشر (Redeploy).`
     };
   }
 
   return {
     success: false,
-    deliveryStatus: "key_missing",
-    message: `إعدادات البريد (Gmail SMTP أو Resend) غير مهيأة لإرسال الرسائل.`
+    deliveryStatus: "gmail_error",
+    message: lastGmailError ? `فشل الاتصال بخادم Gmail: ${lastGmailError}` : `تعذر تهيئة خادم Gmail SMTP.`
   };
 }
 
@@ -240,7 +202,6 @@ app.get(["/api/health", "/health"], (req, res) => {
     integrations: {
       stripe: Boolean(process.env.STRIPE_SECRET_KEY),
       gmail: Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD),
-      resend: Boolean(process.env.RESEND_API_KEY),
       virustotal: Boolean(process.env.VIRUSTOTAL_API_KEY),
       firebase: Boolean(process.env.VITE_FIREBASE_PROJECT_ID)
     }
@@ -279,9 +240,6 @@ app.get(["/api/email/health", "/email/health"], async (req, res) => {
       smtpVerified,
       smtpVerificationError,
       lastGmailError
-    },
-    resend: {
-      configured: Boolean(process.env.RESEND_API_KEY)
     }
   });
 });
@@ -380,7 +338,7 @@ app.post("/api/payment/verify-and-charge", async (req, res) => {
 // 4. Live Email Verification OTP
 app.post(["/api/email/send-otp", "/email/send-otp"], async (req, res) => {
   try {
-    const { email, otpCode, username } = req.body;
+    const { email, otpCode, username } = req.body || {};
 
     if (!email) {
       return res.status(400).json({ error: "Email address is required." });
@@ -432,7 +390,7 @@ app.post(["/api/email/send-otp", "/email/send-otp"], async (req, res) => {
     });
   } catch (error: any) {
     console.error("Send OTP error:", error);
-    res.status(500).json({ 
+    res.status(200).json({ 
       success: false, 
       error: error.message || "Failed to send verification email.",
       message: `خطأ أثناء إرسال البريد: ${error.message || "يرجى التحقق من إعدادات Vercel"}`
@@ -452,7 +410,7 @@ app.post(["/api/email/security-alert", "/email/security-alert"], async (req, res
       oldEmail, 
       newEmail, 
       otpCode 
-    } = req.body;
+    } = req.body || {};
 
     if (!email) {
       return res.status(400).json({ error: "Email parameter is required." });
@@ -531,7 +489,6 @@ app.post(["/api/email/security-alert", "/email/security-alert"], async (req, res
         break;
     }
 
-    const resend = getResend();
     const htmlBody = `
       <div dir="rtl" style="font-family: Arial, Tahoma, sans-serif; max-width: 540px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; color: #1e293b;">
         <div style="text-align: center; margin-bottom: 20px;">
@@ -589,7 +546,7 @@ app.post(["/api/email/security-alert", "/email/security-alert"], async (req, res
     });
   } catch (error: any) {
     console.error("Security alert error:", error);
-    res.status(500).json({ 
+    res.status(200).json({ 
       success: false, 
       error: error.message || "Failed to send security alert.",
       message: `خطأ أثناء إرسال الإشعار: ${error.message || "يرجى التحقق من إعدادات Vercel"}`
