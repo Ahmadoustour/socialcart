@@ -335,8 +335,8 @@ export async function sendSecurityAlertEmail(params: {
     } else {
       return {
         success: false,
-        message: data.error || 'تعذر إرسال الإشعار الأمني إلى البريد الإلكتروني.',
-        deliveryStatus: 'error',
+        message: data.message || data.error || 'تعذر إرسال الإشعار الأمني إلى البريد الإلكتروني.',
+        deliveryStatus: data.cooldown ? 'cooldown' : 'error',
         otpCode: params.otpCode
       };
     }

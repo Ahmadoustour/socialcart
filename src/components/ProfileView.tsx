@@ -213,6 +213,35 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [cardOtpNotice, setCardOtpNotice] = useState<string | null>(null);
   const [isSendingCardOtp, setIsSendingCardOtp] = useState(false);
 
+  // 60-Second Cooldown Intervals for OTP Resends (Security Anti-Spam)
+  const [cardOtpCooldown, setCardOtpCooldown] = useState(0);
+  const [emailChangeOtpCooldown, setEmailChangeOtpCooldown] = useState(0);
+  const [emailVerifyOtpCooldown, setEmailVerifyOtpCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cardOtpCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCardOtpCooldown(prev => (prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cardOtpCooldown]);
+
+  useEffect(() => {
+    if (emailChangeOtpCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setEmailChangeOtpCooldown(prev => (prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [emailChangeOtpCooldown]);
+
+  useEffect(() => {
+    if (emailVerifyOtpCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setEmailVerifyOtpCooldown(prev => (prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [emailVerifyOtpCooldown]);
+
   // Handle File Upload from device
   const processImageFile = (file: File) => {
     setAvatarUploadError(null);
@@ -331,6 +360,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       setEmailChangeOtp('');
       setEmailChangeOtpError(null);
       setEmailChangeOtpNotice(null);
+      setEmailChangeOtpCooldown(60);
       setIsEmailChangeModalOpen(true);
 
       // 1. Send OTP verification code to the CURRENT (OLD) email for security authorization!
@@ -424,9 +454,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   const handleResendEmailChangeOtp = () => {
     if (!pendingNewEmail) return;
+    if (emailChangeOtpCooldown > 0) {
+      setEmailChangeOtpNotice(`يرجى الانتظار ${emailChangeOtpCooldown} ثانية قبل إعادة إرسال رمز جديد.`);
+      return;
+    }
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setSentEmailChangeOtp(code);
     setIsSendingEmailChangeOtp(true);
+    setEmailChangeOtpCooldown(60);
     const targetEmail = currentUser.email ? currentUser.email : pendingNewEmail;
     sendSecurityAlertEmail({
       email: targetEmail,
@@ -487,21 +522,28 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   };
 
   const handleSendEmailOtp = async () => {
+    if (emailVerifyOtpCooldown > 0) {
+      setOtpServerMsg(`يرجى الانتظار ${emailVerifyOtpCooldown} ثانية قبل إعادة إرسال رمز جديد.`);
+      setShowEmailVerifyModal(true);
+      return;
+    }
     setIsSendingOtp(true);
     setEmailOtpError(null);
     setOtpServerMsg(null);
+    setEmailVerifyOtpCooldown(60);
 
     const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
     setSentOtpCode(generatedCode);
+    const targetEmail = (currentUser.email || email || '').trim();
 
     try {
       const response = await fetch('/api/email/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: currentUser.email,
+          email: targetEmail,
           otpCode: generatedCode,
-          username: currentUser.displayName
+          username: displayName.trim() || currentUser.displayName
         })
       });
 
@@ -593,6 +635,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setCardOtpError(null);
     setCardOtpNotice(null);
     setIsSendingCardOtp(true);
+    setCardOtpCooldown(60);
     setIsCardOtpModalOpen(true);
 
     sendSecurityAlertEmail({
@@ -632,6 +675,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setCardOtpError(null);
     setCardOtpNotice(null);
     setIsSendingCardOtp(true);
+    setCardOtpCooldown(60);
     setIsCardOtpModalOpen(true);
 
     sendSecurityAlertEmail({
@@ -712,11 +756,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   };
 
   const handleResendCardOtp = () => {
+    if (cardOtpCooldown > 0) {
+      setCardOtpNotice(`يرجى الانتظار ${cardOtpCooldown} ثانية قبل إعادة إرسال رمز جديد.`);
+      return;
+    }
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setSentCardOtp(code);
     setIsSendingCardOtp(true);
     setCardOtpNotice(null);
     setCardOtpError(null);
+    setCardOtpCooldown(60);
 
     const actionType = cardOtpAction === 'save' ? 'card_change_requested' : 'card_removal_requested';
     const last4 = cardOtpAction === 'save' ? (pendingCardData?.last4 || '****') : (currentUser.savedCard?.last4 || '****');
@@ -1562,6 +1611,27 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   </div>
                 )}
 
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    disabled={isSendingOtp || emailVerifyOtpCooldown > 0}
+                    onClick={handleSendEmailOtp}
+                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1.5 font-medium disabled:opacity-50 disabled:no-underline cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSendingOtp ? 'animate-spin' : ''}`} />
+                    <span>
+                      {emailVerifyOtpCooldown > 0
+                        ? `إعادة الإرسال بعد (${emailVerifyOtpCooldown} ثانية)`
+                        : 'إعادة إرسال الرمز'}
+                    </span>
+                  </button>
+                  {emailVerifyOtpCooldown > 0 && (
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      {emailVerifyOtpCooldown}s
+                    </span>
+                  )}
+                </div>
+
                 <div className="flex gap-2 pt-2">
                   <button
                     type="button"
@@ -2226,13 +2296,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <div className="flex items-center justify-between pt-2">
                 <button
                   type="button"
-                  disabled={isSendingEmailChangeOtp}
+                  disabled={isSendingEmailChangeOtp || emailChangeOtpCooldown > 0}
                   onClick={handleResendEmailChangeOtp}
-                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium disabled:opacity-50"
+                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1.5 font-medium disabled:opacity-50 disabled:no-underline cursor-pointer disabled:cursor-not-allowed"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isSendingEmailChangeOtp ? 'animate-spin' : ''}`} />
-                  <span>إعادة إرسال الرمز</span>
+                  <span>
+                    {emailChangeOtpCooldown > 0
+                      ? `إعادة الإرسال بعد (${emailChangeOtpCooldown} ثانية)`
+                      : 'إعادة إرسال الرمز'}
+                  </span>
                 </button>
+                {emailChangeOtpCooldown > 0 && (
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    {emailChangeOtpCooldown}s
+                  </span>
+                )}
               </div>
 
               <div className="flex gap-2 pt-2">
@@ -2347,13 +2426,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <div className="flex items-center justify-between pt-2">
                 <button
                   type="button"
-                  disabled={isSendingCardOtp}
+                  disabled={isSendingCardOtp || cardOtpCooldown > 0}
                   onClick={handleResendCardOtp}
-                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium disabled:opacity-50 cursor-pointer"
+                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1.5 font-medium disabled:opacity-50 disabled:no-underline cursor-pointer disabled:cursor-not-allowed"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isSendingCardOtp ? 'animate-spin' : ''}`} />
-                  <span>إعادة إرسال الرمز</span>
+                  <span>
+                    {cardOtpCooldown > 0
+                      ? `إعادة الإرسال بعد (${cardOtpCooldown} ثانية)`
+                      : 'إعادة إرسال الرمز'}
+                  </span>
                 </button>
+                {cardOtpCooldown > 0 && (
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    {cardOtpCooldown}s
+                  </span>
+                )}
               </div>
 
               <div className="flex gap-2 pt-2">

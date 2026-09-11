@@ -4,6 +4,7 @@ import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import Stripe from "stripe";
 import { Resend } from "resend";
+import nodemailer, { type Transporter } from "nodemailer";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -63,6 +64,104 @@ function getResend(): Resend | null {
   return resendClient;
 }
 
+let gmailTransporter: Transporter | null = null;
+function getGmailTransporter(): Transporter | null {
+  const user = process.env.GMAIL_USER?.trim();
+  const rawPass = process.env.GMAIL_APP_PASSWORD?.trim();
+  const pass = rawPass ? rawPass.replace(/\s+/g, "") : "";
+
+  if (!gmailTransporter && user && pass) {
+    gmailTransporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user,
+        pass
+      }
+    });
+  }
+  return gmailTransporter;
+}
+
+// 60-Second Cooldown Tracking for Verification Messages
+const lastOtpSentTimes = new Map<string, number>();
+
+// Unified Email Delivery Engine (Prioritizes Gmail SMTP for sending to any email globally)
+async function sendSystemEmail({
+  to,
+  subject,
+  html
+}: {
+  to: string;
+  subject: string;
+  html: string;
+}): Promise<{ success: boolean; deliveryStatus: string; deliveryId?: string; message: string }> {
+  const transporter = getGmailTransporter();
+  const gmailUser = process.env.GMAIL_USER?.trim();
+
+  // 1. Primary: Direct Gmail SMTP Dispatch (Can send to ANY email address without domain limits!)
+  if (transporter && gmailUser) {
+    try {
+      const info = await transporter.sendMail({
+        from: `"SocialCart Security" <${gmailUser}>`,
+        to,
+        subject,
+        html
+      });
+      console.log(`✅ [Gmail SMTP Success] MessageId: ${info.messageId} to ${to}`);
+      return {
+        success: true,
+        deliveryStatus: "sent",
+        deliveryId: info.messageId,
+        message: `تم إرسال البريد الإلكتروني بنجاح عبر Gmail إلى (${to}).`
+      };
+    } catch (gmailErr: any) {
+      console.warn("⚠️ [Gmail SMTP Warning]:", gmailErr.message);
+    }
+  }
+
+  // 2. Secondary: Resend API Dispatch
+  const resend = getResend();
+  if (resend) {
+    try {
+      const data = await resend.emails.send({
+        from: "SocialCart Security <onboarding@resend.dev>",
+        to: [to],
+        subject,
+        html
+      });
+
+      if (data.error) {
+        console.warn("Resend email response warning:", data.error);
+        return {
+          success: true,
+          deliveryStatus: "provider_restriction",
+          message: `ملاحظة مزود البريد (Resend): ${data.error.message}`
+        };
+      }
+
+      return {
+        success: true,
+        deliveryStatus: "sent",
+        deliveryId: data.data?.id,
+        message: `تم إرسال رمز التحقق بنجاح إلى بريدك الإلكتروني (${to}).`
+      };
+    } catch (sendErr: any) {
+      console.warn("Resend email dispatch error:", sendErr.message);
+      return {
+        success: false,
+        deliveryStatus: "error",
+        message: `تعذر الإرسال عبر المزود: ${sendErr.message}`
+      };
+    }
+  }
+
+  return {
+    success: false,
+    deliveryStatus: "key_missing",
+    message: `إعدادات البريد (Gmail SMTP أو Resend) غير مهيأة لإرسال الرسائل.`
+  };
+}
+
 // 1. System Health & Integration Status API
 app.get("/api/health", (req, res) => {
   res.json({
@@ -70,6 +169,7 @@ app.get("/api/health", (req, res) => {
     timestamp: new Date().toISOString(),
     integrations: {
       stripe: Boolean(process.env.STRIPE_SECRET_KEY),
+      gmail: Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD),
       resend: Boolean(process.env.RESEND_API_KEY),
       virustotal: Boolean(process.env.VIRUSTOTAL_API_KEY),
       firebase: Boolean(process.env.VITE_FIREBASE_PROJECT_ID)
@@ -168,75 +268,59 @@ app.post("/api/payment/verify-and-charge", async (req, res) => {
   }
 });
 
-// 4. Resend Live Email Verification OTP
+// 4. Live Email Verification OTP
 app.post("/api/email/send-otp", async (req, res) => {
   try {
     const { email, otpCode, username } = req.body;
-    const resend = getResend();
 
     if (!email) {
       return res.status(400).json({ error: "Email address is required." });
     }
 
+    // 60-Second Cooldown Check
+    const recipientKey = `otp:${email.toLowerCase().trim()}`;
+    const now = Date.now();
+    const lastSent = lastOtpSentTimes.get(recipientKey);
+    if (lastSent && now - lastSent < 60000) {
+      const remainingSeconds = Math.ceil((60000 - (now - lastSent)) / 1000);
+      return res.status(429).json({
+        success: false,
+        cooldown: true,
+        remainingSeconds,
+        message: `يرجى الانتظار ${remainingSeconds} ثانية قبل إعادة إرسال رمز تحقق جديد.`
+      });
+    }
+    lastOtpSentTimes.set(recipientKey, now);
+
     const code = otpCode || Math.floor(100000 + Math.random() * 900000).toString();
 
     console.log(`📨 [Email Verification Dispatch] To: ${email} | Code: ${code}`);
 
-    if (resend) {
-      try {
-        const data = await resend.emails.send({
-          from: "SocialCart Security <onboarding@resend.dev>",
-          to: [email],
-          subject: `🔐 رمز التحقق الخاص بحسابك في SocialCart: ${code}`,
-          html: `
-            <div dir="rtl" style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
-              <h2 style="color: #4f46e5; margin-bottom: 8px;">منصة SocialCart الموثقة</h2>
-              <p style="color: #475569; font-size: 14px;">مرحباً ${username || "عزيزنا المستخدم"}،</p>
-              <p style="color: #475569; font-size: 14px;">طلبك لتأكيد البريد الإلكتروني وتوثيق الأمان قيد المعالجة. يرجى استخدام رمز التحقق التالي:</p>
-              <div style="background-color: #f1f5f9; padding: 16px; text-align: center; border-radius: 12px; margin: 20px 0;">
-                <span style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #1e293b; font-family: monospace;">${code}</span>
-              </div>
-              <p style="color: #94a3b8; font-size: 12px;">هذا الرمز صالح لمدة 10 دقائق. لا تشارك هذا الرمز مع أي شخص لحماية حسابك.</p>
-              <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 20px 0;" />
-              <p style="color: #10b981; font-size: 11px; font-weight: bold;">🛡️ محمي بواسطة كلاود فلير والتشفير السحابي المزدوج</p>
-            </div>
-          `
-        });
+    const result = await sendSystemEmail({
+      to: email,
+      subject: `🔐 رمز التحقق الخاص بحسابك في SocialCart: ${code}`,
+      html: `
+        <div dir="rtl" style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+          <h2 style="color: #4f46e5; margin-bottom: 8px;">منصة SocialCart الموثقة</h2>
+          <p style="color: #475569; font-size: 14px;">مرحباً ${username || "عزيزنا المستخدم"}،</p>
+          <p style="color: #475569; font-size: 14px;">طلبك لتأكيد البريد الإلكتروني وتوثيق الأمان قيد المعالجة. يرجى استخدام رمز التحقق التالي:</p>
+          <div style="background-color: #f1f5f9; padding: 16px; text-align: center; border-radius: 12px; margin: 20px 0;">
+            <span style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #1e293b; font-family: monospace;">${code}</span>
+          </div>
+          <p style="color: #94a3b8; font-size: 12px;">هذا الرمز صالح لمدة 10 دقائق. لا تشارك هذا الرمز مع أي شخص لحماية حسابك.</p>
+          <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 20px 0;" />
+          <p style="color: #10b981; font-size: 11px; font-weight: bold;">🛡️ محمي بواسطة كلاود فلير والتشفير السحابي المزدوج</p>
+        </div>
+      `
+    });
 
-        if (data.error) {
-          console.warn("Resend email response warning:", data.error);
-          return res.json({
-            success: true,
-            code,
-            deliveryStatus: "provider_restriction",
-            message: `ملاحظة مزود البريد (Resend): ${data.error.message}`
-          });
-        }
-
-        return res.json({
-          success: true,
-          code,
-          deliveryStatus: "sent",
-          deliveryId: data.data?.id,
-          message: `تم إرسال رمز التحقق بنجاح إلى بريدك الإلكتروني (${email}).`
-        });
-      } catch (sendErr: any) {
-        console.warn("Resend email dispatch error:", sendErr.message);
-        return res.json({
-          success: true,
-          code,
-          deliveryStatus: "error",
-          message: `تعذر الإرسال عبر المزود: ${sendErr.message}`
-        });
-      }
-    } else {
-      return res.json({
-        success: true,
-        code,
-        deliveryStatus: "key_missing",
-        message: `مفتاح RESEND_API_KEY غير مضاف في إعدادات البيئة لإرسال البريد الخارجي الفعلي.`
-      });
-    }
+    return res.json({
+      success: result.success,
+      code,
+      deliveryStatus: result.deliveryStatus,
+      deliveryId: result.deliveryId,
+      message: result.message
+    });
   } catch (error: any) {
     console.error("Send OTP error:", error);
     res.status(500).json({ error: error.message || "Failed to send verification email." });
@@ -259,6 +343,23 @@ app.post("/api/email/security-alert", async (req, res) => {
 
     if (!email) {
       return res.status(400).json({ error: "Email parameter is required." });
+    }
+
+    // 60-Second Cooldown Check for OTP Requests
+    if (otpCode) {
+      const recipientKey = `sec-otp:${email.toLowerCase().trim()}:${actionType}`;
+      const now = Date.now();
+      const lastSent = lastOtpSentTimes.get(recipientKey);
+      if (lastSent && now - lastSent < 60000) {
+        const remainingSeconds = Math.ceil((60000 - (now - lastSent)) / 1000);
+        return res.status(429).json({
+          success: false,
+          cooldown: true,
+          remainingSeconds,
+          message: `يرجى الانتظار ${remainingSeconds} ثانية قبل إعادة إرسال رمز تحقق جديد.`
+        });
+      }
+      lastOtpSentTimes.set(recipientKey, now);
     }
 
     const timestampStr = new Date().toLocaleString("ar-SA", { 
@@ -360,48 +461,19 @@ app.post("/api/email/security-alert", async (req, res) => {
 
     console.log(`🛡️ [Security Alert Email Dispatch] To: ${email} | Action: ${actionType} | Subject: ${subject} | OTP: ${otpCode || 'N/A'}`);
 
-    if (resend) {
-      try {
-        const sendResult = await resend.emails.send({
-          from: "SocialCart Security <onboarding@resend.dev>",
-          to: [email],
-          subject,
-          html: htmlBody
-        });
+    const result = await sendSystemEmail({
+      to: email,
+      subject,
+      html: htmlBody
+    });
 
-        if (sendResult.error) {
-          console.warn("Resend Security Alert response warning:", sendResult.error);
-          return res.json({
-            success: true,
-            deliveryStatus: "provider_restriction",
-            otpCode,
-            message: `ملاحظة مزود البريد (Resend): ${sendResult.error.message}`
-          });
-        }
-
-        return res.json({
-          success: true,
-          deliveryStatus: "sent",
-          deliveryId: sendResult.data?.id,
-          message: `تم إرسال رسالة الأمان ورمز التحقق إلى بريدك الإلكتروني (${email}) بنجاح.`
-        });
-      } catch (sendErr: any) {
-        console.warn("Resend Security Alert dispatch note:", sendErr.message);
-        return res.json({
-          success: true,
-          deliveryStatus: "error",
-          otpCode,
-          message: `تعذر الإرسال عبر المزود: ${sendErr.message}`
-        });
-      }
-    } else {
-      return res.json({
-        success: true,
-        deliveryStatus: "key_missing",
-        otpCode,
-        message: `تنبيه: مفتاح RESEND_API_KEY غير مضاف في إعدادات البيئة لإرسال البريد الخارجي الفعلي عبر الإنترنت.`
-      });
-    }
+    return res.json({
+      success: result.success,
+      deliveryStatus: result.deliveryStatus,
+      deliveryId: result.deliveryId,
+      otpCode,
+      message: result.message
+    });
   } catch (error: any) {
     console.error("Security alert error:", error);
     res.status(500).json({ error: error.message || "Failed to send security alert." });
@@ -747,4 +819,8 @@ async function startServer() {
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
