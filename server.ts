@@ -305,6 +305,9 @@ app.get(["/api/email/health", "/email/health"], async (req, res) => {
       smtpVerified,
       smtpVerificationError,
       lastGmailError
+    },
+    resend: {
+      configured: Boolean(process.env.RESEND_API_KEY?.trim())
     }
   });
 });

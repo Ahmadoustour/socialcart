@@ -1,4 +1,4 @@
-import app from "../server";
+import app from "../server.ts";
 import type { IncomingMessage, ServerResponse } from "http";
 
 export default function handler(
@@ -31,5 +31,18 @@ export default function handler(
     // Keep original req.url if URL parsing encounters issues
   }
 
-  return (app as any)(req, res);
+  try {
+    return (app as any)(req, res);
+  } catch (err: any) {
+    console.error("Vercel Serverless Function Dispatch Error:", err);
+    if (!res.headersSent) {
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({
+        success: false,
+        error: err?.message || "Internal server error",
+        message: `تعذر معالجة الطلب على Vercel: ${err?.message || "يرجى التحقق من إعدادات Vercel"}`
+      }));
+    }
+  }
 }
