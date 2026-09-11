@@ -5,21 +5,30 @@ export default function handler(
   req: IncomingMessage & { url?: string; query?: Record<string, any> },
   res: ServerResponse
 ) {
-  if (req.url) {
-    try {
-      const parsed = new URL(req.url, "http://localhost");
-      const pathParam = parsed.searchParams.get("path");
-      if (pathParam) {
-        req.url = `/api/${pathParam.replace(/^\/+/, "")}`;
-      }
-    } catch {
-      // ignore
-    }
-  }
+  try {
+    const rawUrl = req.url || "/";
+    const forwarded = (req.headers["x-forwarded-url"] as string) || (req.headers["x-matched-path"] as string);
+    const targetUrl = (forwarded && forwarded.startsWith("/")) ? forwarded : rawUrl;
 
-  const forwarded = (req.headers["x-forwarded-url"] as string) || (req.headers["x-matched-path"] as string);
-  if (forwarded && forwarded.startsWith("/api")) {
-    req.url = forwarded;
+    const parsed = new URL(targetUrl, "http://localhost");
+    const pathParam = parsed.searchParams.get("path");
+
+    if (pathParam) {
+      req.url = `/api/${pathParam.replace(/^\/+/, "")}`;
+    } else if (parsed.pathname.startsWith("/api")) {
+      req.url = parsed.pathname;
+    } else {
+      req.url = `/api/${parsed.pathname.replace(/^\/+/, "")}`;
+    }
+
+    // Preserve any remaining query parameters except path
+    parsed.searchParams.delete("path");
+    const remainingQuery = parsed.searchParams.toString();
+    if (remainingQuery) {
+      req.url += `?${remainingQuery}`;
+    }
+  } catch {
+    // Keep original req.url if URL parsing encounters issues
   }
 
   return (app as any)(req, res);

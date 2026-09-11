@@ -397,13 +397,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         otpCode: code
       }).then(res => {
         setIsSendingEmailChangeOtp(false);
-        if (res.deliveryStatus === 'key_missing' || res.deliveryStatus === 'provider_restriction') {
-          setEmailChangeOtpNotice(`${res.message} (رمز المتابعة: ${code})`);
+        if (!res.success) {
+          setEmailChangeOtpError(res.message || 'تعذر إرسال رمز التحقق إلى بريدك الإلكتروني. لحماية أمان حسابك، لا يمكن إتمام التغيير دون استلام الرمز من صندوق البريد.');
+          setEmailChangeOtpNotice(null);
         } else {
           setEmailChangeOtpNotice(res.message);
+          setEmailChangeOtpError(null);
         }
       }).catch(() => {
         setIsSendingEmailChangeOtp(false);
+        setEmailChangeOtpError('تعذر الاتصال بخادم إرسال البريد الإلكتروني. يرجى التأكد من اتصالك بالإنترنت والمحاولة لاحقاً.');
+        setEmailChangeOtpNotice(null);
       });
 
       // 2. Also notify the new email if distinct
@@ -495,13 +499,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       otpCode: code
     }).then(res => {
       setIsSendingEmailChangeOtp(false);
-      if (res.deliveryStatus === 'key_missing' || res.deliveryStatus === 'provider_restriction') {
-        setEmailChangeOtpNotice(`${res.message} (رمز المتابعة: ${code})`);
+      if (!res.success) {
+        setEmailChangeOtpError(res.message || 'تعذر إعادة إرسال رمز التحقق إلى بريدك الإلكتروني.');
+        setEmailChangeOtpNotice(null);
       } else {
-        setEmailChangeOtpNotice(res.message);
+        setEmailChangeOtpNotice('تمت إعادة إرسال رمز التحقق الأمني بنجاح إلى بريدك الإلكتروني.');
+        setEmailChangeOtpError(null);
       }
     }).catch(() => {
       setIsSendingEmailChangeOtp(false);
+      setEmailChangeOtpError('تعذر الاتصال بخادم إرسال البريد الإلكتروني.');
+      setEmailChangeOtpNotice(null);
     });
   };
 
@@ -570,13 +578,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         })
       });
 
-      const data = await response.json();
-      if (data && data.message) {
+      const data = await response.json().catch(() => ({}));
+      if (data && data.success === false) {
+        setEmailOtpError(data.message || 'تعذر إرسال رمز التحقق إلى بريدك الإلكتروني. يرجى التأكد من إعدادات البريد.');
+        setOtpServerMsg(null);
+      } else if (data && data.message) {
         setOtpServerMsg(data.message);
+        setEmailOtpError(null);
       }
     } catch (err: any) {
-      console.warn('Resend email API request error:', err);
-      setOtpServerMsg('تم توليد الرمز محلياً.');
+      console.warn('Send email OTP error:', err);
+      setEmailOtpError('تعذر الاتصال بخادم إرسال البريد الإلكتروني.');
+      setOtpServerMsg(null);
     } finally {
       setIsSendingOtp(false);
       setShowEmailVerifyModal(true);
@@ -670,13 +683,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       otpCode: code
     }).then(res => {
       setIsSendingCardOtp(false);
-      if (res.deliveryStatus === 'key_missing' || res.deliveryStatus === 'provider_restriction') {
-        setCardOtpNotice(`${res.message} (رمز المتابعة: ${code})`);
+      if (!res.success) {
+        setCardOtpError(res.message || 'تعذر إرسال رمز الأمان إلى بريدك الإلكتروني. لحماية أموالك، لا يمكن اعتماد البطاقة دون التحقق من البريد.');
+        setCardOtpNotice(null);
       } else {
         setCardOtpNotice(res.message);
+        setCardOtpError(null);
       }
     }).catch(() => {
       setIsSendingCardOtp(false);
+      setCardOtpError('تعذر الاتصال بخادم إرسال البريد الإلكتروني. يرجى التأكد من اتصالك بالإنترنت والمحاولة لاحقاً.');
+      setCardOtpNotice(null);
     });
   };
 
@@ -710,13 +727,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       otpCode: code
     }).then(res => {
       setIsSendingCardOtp(false);
-      if (res.deliveryStatus === 'key_missing' || res.deliveryStatus === 'provider_restriction') {
-        setCardOtpNotice(`${res.message} (رمز المتابعة: ${code})`);
+      if (!res.success) {
+        setCardOtpError(res.message || 'تعذر إرسال رمز الأمان إلى بريدك الإلكتروني. لحماية حسابك، لا يمكن حذف البطاقة دون التحقق من البريد.');
+        setCardOtpNotice(null);
       } else {
         setCardOtpNotice(res.message);
+        setCardOtpError(null);
       }
     }).catch(() => {
       setIsSendingCardOtp(false);
+      setCardOtpError('تعذر الاتصال بخادم إرسال البريد الإلكتروني. يرجى التأكد من اتصالك بالإنترنت والمحاولة لاحقاً.');
+      setCardOtpNotice(null);
     });
   };
 
@@ -804,14 +825,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       otpCode: code
     }).then(res => {
       setIsSendingCardOtp(false);
-      if (res.deliveryStatus === 'key_missing' || res.deliveryStatus === 'provider_restriction') {
-        setCardOtpNotice(`${res.message} (رمز المتابعة: ${code})`);
+      if (!res.success) {
+        setCardOtpError(res.message || 'تعذر إعادة إرسال رمز الأمان إلى بريدك الإلكتروني.');
+        setCardOtpNotice(null);
       } else {
         setCardOtpNotice('تمت إعادة إرسال رمز التحقق الأمني إلى بريدك الإلكتروني بنجاح.');
+        setCardOtpError(null);
       }
     }).catch(() => {
       setIsSendingCardOtp(false);
-      setCardOtpNotice('تم توليد رمز تحقق أمني جديد.');
+      setCardOtpError('تعذر الاتصال بخادم إرسال البريد الإلكتروني.');
+      setCardOtpNotice(null);
     });
   };
 

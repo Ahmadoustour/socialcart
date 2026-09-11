@@ -23,38 +23,62 @@ app.use((req, res, next) => {
 
 // Normalize request URLs for Vercel serverless functions (handling rewrites and stripped prefixes)
 app.use((req, res, next) => {
+  if (req.url) {
+    try {
+      const parsed = new URL(req.url, "http://localhost");
+      const pathParam = parsed.searchParams.get("path");
+      if (pathParam) {
+        parsed.searchParams.delete("path");
+        const remainingQuery = parsed.searchParams.toString();
+        req.url = `/api/${pathParam.replace(/^\/+/, "")}${remainingQuery ? `?${remainingQuery}` : ""}`;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   const forwarded = (req.headers["x-forwarded-url"] as string) || (req.headers["x-matched-path"] as string);
   if (forwarded && forwarded.startsWith("/api/")) {
     req.url = forwarded;
-  } else if (req.query && req.query.path) {
-    const rawPath = Array.isArray(req.query.path) ? req.query.path.join("/") : String(req.query.path);
-    req.url = `/api/${rawPath.replace(/^\/+/, "")}`;
-  } else if (!req.url.startsWith("/api") && !req.url.startsWith("/assets") && req.url !== "/" && req.url !== "") {
-    req.url = `/api${req.url.startsWith("/") ? "" : "/"}${req.url}`;
   }
   next();
 });
 
-// Support pre-parsed bodies from serverless platform environments (e.g. Vercel)
-app.use((req, res, next) => {
-  if (req.body !== undefined && req.body !== null && typeof req.body === "object") {
-    (req as any)._body = true;
-  }
-  next();
-});
-
-app.use((req, res, next) => {
-  if ((req as any)._body) {
+// Support pre-parsed, raw, or stream bodies without hanging on Vercel
+app.use((req: any, res, next) => {
+  if (req.body !== undefined && req.body !== null) {
+    if (typeof req.body === "string") {
+      try {
+        req.body = JSON.parse(req.body);
+      } catch {}
+    } else if (Buffer.isBuffer(req.body)) {
+      try {
+        req.body = JSON.parse(req.body.toString("utf8"));
+      } catch {}
+    }
+    req._body = true;
     return next();
   }
-  express.json({ limit: "50mb" })(req, res, next);
-});
 
-app.use((req, res, next) => {
-  if ((req as any)._body) {
+  if (req.readableEnded || req.complete) {
+    req.body = req.body || {};
+    req._body = true;
     return next();
   }
-  express.urlencoded({ extended: true, limit: "50mb" })(req, res, next);
+
+  express.json({ limit: "50mb" })(req, res, (err) => {
+    if (err) {
+      console.warn("JSON parse warning:", err.message);
+      req.body = req.body || {};
+      return next();
+    }
+    express.urlencoded({ extended: true, limit: "50mb" })(req, res, (err2) => {
+      if (err2) {
+        req.body = req.body || {};
+      }
+      next();
+    });
+  });
 });
 
 // Persistent File-Based Storage with Vercel /tmp fallback
@@ -117,7 +141,7 @@ function getGmailTransporter(): Transporter | null {
     return null;
   }
 
-  // Use direct SSL on port 465 for instantaneous TLS handshake and high serverless reliability
+  // Use direct SSL on port 465 with tight timeouts suited for serverless runtimes
   return nodemailer.createTransport({
     host: "smtp.gmail.com",
     port: 465,
@@ -126,9 +150,9 @@ function getGmailTransporter(): Transporter | null {
       user,
       pass
     },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000
+    connectionTimeout: 4000,
+    greetingTimeout: 4000,
+    socketTimeout: 5000
   });
 }
 
@@ -137,7 +161,7 @@ const lastOtpSentTimes = new Map<string, number>();
 
 let lastGmailError: string | null = null;
 
-// Unified Email Delivery Engine - Exclusively uses Google Gmail SMTP
+// Unified Email Delivery Engine - Supports Resend API (Fast HTTP) and Gmail SMTP
 async function sendSystemEmail({
   to,
   subject,
@@ -147,18 +171,59 @@ async function sendSystemEmail({
   subject: string;
   html: string;
 }): Promise<{ success: boolean; deliveryStatus: string; deliveryId?: string; message: string }> {
+  // 1. Try Resend REST API first if RESEND_API_KEY is configured (ideal for Vercel serverless)
+  const resendApiKey = process.env.RESEND_API_KEY?.trim();
+  if (resendApiKey) {
+    try {
+      const fromEmail = process.env.RESEND_FROM || "SocialCart <onboarding@resend.dev>";
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          from: fromEmail,
+          to: [to],
+          subject,
+          html
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.id) {
+        console.log(`✅ [Resend Success] MessageId: ${data.id} to ${to}`);
+        return {
+          success: true,
+          deliveryStatus: "sent",
+          deliveryId: data.id,
+          message: `تم إرسال البريد الإلكتروني بنجاح عبر Resend إلى (${to}).`
+        };
+      } else {
+        console.warn("⚠️ [Resend API Error]:", data);
+      }
+    } catch (resendErr: any) {
+      console.warn("⚠️ [Resend Network Error]:", resendErr.message);
+    }
+  }
+
+  // 2. Try Gmail SMTP
   const transporter = getGmailTransporter();
   const gmailUser = process.env.GMAIL_USER?.trim();
 
-  // Direct Gmail SMTP Dispatch (Sends to ANY email address globally)
+  // Direct Gmail SMTP Dispatch with 6-second watchdog timeout
   if (transporter && gmailUser) {
     try {
-      const info = await transporter.sendMail({
-        from: `"سوشيال كارت SocialCart" <${gmailUser}>`,
-        to,
-        subject,
-        html
-      });
+      const info = await Promise.race([
+        transporter.sendMail({
+          from: `"سوشيال كارت SocialCart" <${gmailUser}>`,
+          to,
+          subject,
+          html
+        }),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error("استغرق خادم البريد وقتاً طويلاً (تجاوز 6 ثوانٍ)")), 6000)
+        )
+      ]);
       lastGmailError = null;
       console.log(`✅ [Gmail SMTP Success] MessageId: ${info.messageId} to ${to}`);
       return {
@@ -383,7 +448,6 @@ app.post(["/api/email/send-otp", "/email/send-otp"], async (req, res) => {
 
     return res.json({
       success: result.success,
-      code,
       deliveryStatus: result.deliveryStatus,
       deliveryId: result.deliveryId,
       message: result.message
@@ -541,7 +605,6 @@ app.post(["/api/email/security-alert", "/email/security-alert"], async (req, res
       success: result.success,
       deliveryStatus: result.deliveryStatus,
       deliveryId: result.deliveryId,
-      otpCode,
       message: result.message
     });
   } catch (error: any) {
@@ -872,6 +935,19 @@ app.post("/api/users", (req, res) => {
   }
 });
 
+// Global Error Handler to guarantee JSON responses and prevent uncaught 500 HTML responses
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error("Unhandled Server Error:", err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(200).json({
+    success: false,
+    error: err.message || "Internal server error",
+    message: `خطأ أثناء المعالجة: ${err.message || "يرجى التحقق من إعدادات Vercel"}`
+  });
+});
+
 // Start Server with Vite middleware for dev / static for prod
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
@@ -894,7 +970,15 @@ async function startServer() {
   });
 }
 
-if (!process.env.VERCEL) {
+// Only start standalone server if executed directly (e.g. `tsx server.ts` or `node dist/server.cjs`)
+// and NOT when imported as a serverless module in Vercel
+const isDirectExecution = process.argv[1] && (
+  process.argv[1].endsWith("server.ts") ||
+  process.argv[1].endsWith("server.cjs") ||
+  process.argv[1].endsWith("server.js")
+);
+
+if (!process.env.VERCEL && isDirectExecution) {
   startServer();
 }
 

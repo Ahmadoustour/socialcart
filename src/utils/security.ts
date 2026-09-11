@@ -306,15 +306,14 @@ export async function sendSecurityAlertEmail(params: {
   oldEmail?: string;
   newEmail?: string;
   otpCode?: string;
-}): Promise<{ success: boolean; message: string; deliveryStatus?: string; otpCode?: string }> {
+}): Promise<{ success: boolean; message: string; deliveryStatus?: string }> {
   try {
     const cleanEmail = (params.email || '').trim();
     if (!cleanEmail) {
       return {
         success: false,
         message: 'لا يوجد بريد إلكتروني محدد لإرسال الرمز إليه. يرجى كتابة بريدك الإلكتروني في الملف الشخصي أولاً.',
-        deliveryStatus: 'email_missing',
-        otpCode: params.otpCode
+        deliveryStatus: 'email_missing'
       };
     }
 
@@ -330,22 +329,19 @@ export async function sendSecurityAlertEmail(params: {
         return {
           success: false,
           message: data.message || 'تعذر إرسال الإشعار الأمني إلى البريد الإلكتروني.',
-          deliveryStatus: data.deliveryStatus || 'error',
-          otpCode: params.otpCode
+          deliveryStatus: data.deliveryStatus || 'error'
         };
       }
       return {
         success: true,
         message: data.message || 'تم إرسال الإشعار الأمني بنجاح.',
-        deliveryStatus: data.deliveryStatus,
-        otpCode: data.otpCode
+        deliveryStatus: data.deliveryStatus
       };
     } else {
       return {
         success: false,
-        message: data.message || data.error || `تعذر إرسال الإشعار الأمني (رمز الاستجابة: ${res.status}). يرجى التحقق من إعدادات Vercel.`,
-        deliveryStatus: data.cooldown ? 'cooldown' : 'error',
-        otpCode: params.otpCode
+        message: data.message || data.error || `تعذر إرسال الإشعار الأمني (رمز الاستجابة: ${res.status}). يرجى التحقق من إعدادات البريد.`,
+        deliveryStatus: data.cooldown ? 'cooldown' : (data.deliveryStatus || 'error')
       };
     }
   } catch (err: any) {
@@ -353,8 +349,7 @@ export async function sendSecurityAlertEmail(params: {
     return { 
       success: false, 
       message: `تعذر الاتصال بخادم إرسال البريد (${err?.message || 'خطأ في الشبكة'}).`,
-      deliveryStatus: 'network_error',
-      otpCode: params.otpCode
+      deliveryStatus: 'network_error'
     };
   }
 }
