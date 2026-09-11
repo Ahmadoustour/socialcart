@@ -354,8 +354,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setInfoError(null);
     setInfoSuccess(false);
 
-    const cleanUsername = username.trim().toLowerCase();
+    const cleanUsername = username.trim().toLowerCase().replace(/\s+/g, '');
     const cleanEmail = email.trim().toLowerCase();
+
+    if (/\s/.test(username)) {
+      setInfoError('اسم المستخدم يجب أن يكون متصلاً دائماً وبدون مسافات.');
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_.-]+$/.test(cleanUsername)) {
+      setInfoError('اسم المستخدم يمكن أن يحتوي فقط على أحرف إنجليزية، أرقام، والرموز (_ . -).');
+      return;
+    }
 
     // Check username uniqueness if changed
     if (cleanUsername !== currentUser.username.toLowerCase()) {
@@ -1476,14 +1486,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">اسم المستخدم (@username):</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-slate-700 dark:text-slate-300">اسم المستخدم (@username):</label>
+                  <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">متصل وبدون مسافات</span>
+                </div>
                 <input
                   type="text"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold"
+                  onChange={(e) => setUsername(e.target.value.replace(/\s+/g, ''))}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ' || e.code === 'Space') {
+                      e.preventDefault();
+                    }
+                  }}
+                  className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-xs font-bold font-mono"
                   required
                 />
+                <p className="text-[10px] text-slate-400 mt-1">يجب أن يكون المعرف كلمة واحدة متصلة دون أي مسافات.</p>
               </div>
             </div>
 

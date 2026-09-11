@@ -162,9 +162,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       // Check locally registered accounts in browser cache
       const savedUsersStr = localStorage.getItem('socialcart_registered_users');
       const savedUsers: any[] = savedUsersStr ? JSON.parse(savedUsersStr) : [];
-      const localMatched = savedUsers.find(
-        u => (u.email.toLowerCase() === identifier.toLowerCase() || u.username.toLowerCase() === identifier.toLowerCase()) && u.password === loginPassword
+      let localMatched = savedUsers.find(
+        u => (u.email?.toLowerCase() === identifier.toLowerCase() || u.username?.toLowerCase() === identifier.toLowerCase()) && u.password === loginPassword
       );
+
+      // If not found in local cache, check server database
+      if (!localMatched) {
+        try {
+          const srvUserRes = await fetch(`/api/users/${encodeURIComponent(identifier)}`);
+          if (srvUserRes.ok) {
+            const srvUser = await srvUserRes.json();
+            if (srvUser && srvUser.password === loginPassword) {
+              localMatched = srvUser;
+              // Cache locally
+              savedUsers.push(srvUser);
+              localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
 
       if (localMatched) {
         setSuccessMsg(`أهلاً بك مجدداً يا ${localMatched.displayName}! تم تسجيل الدخول بنجاح.`);
@@ -288,7 +306,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const cleanUsername = regUsername.trim().toLowerCase();
+    // Enforce username has no spaces whatsoever
+    const cleanUsername = regUsername.toLowerCase().replace(/\s+/g, '');
     const cleanEmail = regEmail.trim().toLowerCase();
     const cleanName = regDisplayName.trim();
 
@@ -297,8 +316,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
+    if (/\s/.test(regUsername)) {
+      setErrorMsg('اسم المستخدم يجب أن يكون متصلاً تماماً بدون أي مسافات.');
+      return;
+    }
+
     if (cleanUsername.length < 3) {
       setErrorMsg('اسم المستخدم يجب أن يتكون من 3 أحرف على الأقل.');
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_.-]+$/.test(cleanUsername)) {
+      setErrorMsg('اسم المستخدم يجب أن يحتوي فقط على أحرف إنجليزية، أرقام، أو الرموز (_ . -).');
+      return;
+    }
+
+    if (!cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      setErrorMsg('صيغة البريد الإلكتروني غير صالحة.');
       return;
     }
 
@@ -312,7 +346,47 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
+    // 1. STRICT LOCAL & PROPS UNIQUENESS CHECK
+    const savedUsersStr = localStorage.getItem('socialcart_registered_users');
+    const savedUsers: User[] = savedUsersStr ? JSON.parse(savedUsersStr) : [];
+
+    const emailTakenLocally = savedUsers.some(u => u.email && u.email.trim().toLowerCase() === cleanEmail) ||
+      registeredEmails.some(em => em.trim().toLowerCase() === cleanEmail);
+
+    if (emailTakenLocally) {
+      setErrorMsg(`⚠️ البريد الإلكتروني (${cleanEmail}) مسجل مسبقاً لدينا! لا يمكن إنشاء حساب جديد بنفس البريد.`);
+      return;
+    }
+
+    const usernameTakenLocally = savedUsers.some(u => u.username && u.username.trim().toLowerCase().replace(/\s+/g, '') === cleanUsername) ||
+      registeredUsernames.some(un => un.trim().toLowerCase().replace(/\s+/g, '') === cleanUsername);
+
+    if (usernameTakenLocally) {
+      setErrorMsg(`⚠️ اسم المستخدم (@${cleanUsername}) محجوز ومستخدم بالفعل لحساب آخر. يرجى اختيار اسم مستخدم متاح.`);
+      return;
+    }
+
     setIsSubmitting(true);
+
+    // 2. STRICT SERVER UNIQUENESS CHECK
+    try {
+      const checkRes = await fetch(`/api/auth/check-unique?username=${encodeURIComponent(cleanUsername)}&email=${encodeURIComponent(cleanEmail)}`);
+      if (checkRes.ok) {
+        const checkData = await checkRes.json();
+        if (checkData.emailTaken) {
+          setErrorMsg(`⚠️ البريد الإلكتروني (${cleanEmail}) مسجل مسبقاً بحساب آخر. لا يمكن تكرار البريد.`);
+          setIsSubmitting(false);
+          return;
+        }
+        if (checkData.usernameTaken) {
+          setErrorMsg(`⚠️ اسم المستخدم (@${cleanUsername}) محجوز بالفعل لمستخدم آخر. يرجى اختيار اسم مستخدم متاح.`);
+          setIsSubmitting(false);
+          return;
+        }
+      }
+    } catch (chkErr) {
+      console.warn('Server uniqueness check notice:', chkErr);
+    }
 
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, regPassword);
@@ -343,15 +417,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       };
 
       // Also persist locally for fast offline retrieval and to server
-      const savedUsersStr = localStorage.getItem('socialcart_registered_users');
-      const savedUsers: any[] = savedUsersStr ? JSON.parse(savedUsersStr) : [];
       savedUsers.push(newUser);
       localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
 
       fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newUser)
+        body: JSON.stringify({ ...newUser, isRegistration: true })
       }).catch(() => {});
 
       setSuccessMsg(`تهانينا يا ${cleanName}! تم إنشاء حسابك وتوثيقه بنجاح 🛡️`);
@@ -363,13 +435,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } catch (err: any) {
       console.warn('Firebase registration error:', err);
       if (err.code === 'auth/email-already-in-use') {
-        setErrorMsg('البريد الإلكتروني هذا مستخدم بالفعل بحساب آخر.');
+        setErrorMsg(`⚠️ البريد الإلكتروني (${cleanEmail}) مسجل مسبقاً بالفعل! لا يمكن إنشاء حساب جديد بنفس البريد.`);
       } else if (err.code === 'auth/weak-password') {
         setErrorMsg('كلمة المرور ضعيفة. يرجى اختيار كلمة مرور أقوى (6 أحرف على الأقل).');
       } else if (err.code === 'auth/invalid-email') {
         setErrorMsg('صيغة البريد الإلكتروني غير صالحة.');
       } else {
-        // Fallback local registration if Firebase is unreachable
+        // Fallback local registration ONLY if Firebase network failed AND not an existing user
+        // Double-check local storage again to never create duplicate
+        const freshUsers: User[] = JSON.parse(localStorage.getItem('socialcart_registered_users') || '[]');
+        if (freshUsers.some(u => (u.email && u.email.toLowerCase() === cleanEmail) || (u.username && u.username.toLowerCase().replace(/\s+/g, '') === cleanUsername))) {
+          setErrorMsg('⚠️ هذا الحساب مسجل مسبقاً! يرجى الانتقال إلى تسجيل الدخول.');
+          return;
+        }
+
         const newUser: User = {
           id: `usr_${Date.now()}`,
           username: cleanUsername,
@@ -388,16 +467,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           twoFactorEnabled: false
         };
 
-        const savedUsersStr = localStorage.getItem('socialcart_registered_users');
-        const savedUsers: any[] = savedUsersStr ? JSON.parse(savedUsersStr) : [];
-        savedUsers.push(newUser);
-        localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
+        // Try backend registration with isRegistration flag
+        try {
+          const srvRes = await fetch('/api/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...newUser, isRegistration: true })
+          });
+          if (!srvRes.ok) {
+            const srvData = await srvRes.json().catch(() => ({}));
+            if (srvRes.status === 409) {
+              setErrorMsg(`⚠️ ${srvData.message || 'هذا الحساب مسجل مسبقاً بحساب آخر.'}`);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn('Backend user registration error:', e);
+        }
 
-        fetch('/api/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newUser)
-        }).catch(() => {});
+        freshUsers.push(newUser);
+        localStorage.setItem('socialcart_registered_users', JSON.stringify(freshUsers));
 
         setSuccessMsg(`تم إنشاء حسابك بنجاح يا ${cleanName}!`);
         setTimeout(() => {
@@ -476,9 +565,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Error / Success Notifications */}
         {errorMsg && (
-          <div className="mb-4 p-3 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 rounded-xl text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{errorMsg}</span>
+          <div className="mb-4 p-3.5 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 rounded-2xl text-rose-700 dark:text-rose-300 text-xs space-y-2.5">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span className="font-semibold leading-relaxed">{errorMsg}</span>
+            </div>
+            {mode === 'register' && (errorMsg.includes('مسجل مسبقاً') || errorMsg.includes('تسجيل الدخول') || errorMsg.includes('محجوز')) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('login');
+                  setLoginIdentifier(regEmail || regUsername);
+                  setLoginPassword('');
+                  setErrorMsg(null);
+                }}
+                className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>الانتقال لتسجيل الدخول بهذا الحساب</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -590,16 +696,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                اسم المستخدم (@)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  اسم المستخدم (@)
+                </label>
+                <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">متصل بدون مسافات</span>
+              </div>
               <input
                 type="text"
                 value={regUsername}
-                onChange={e => setRegUsername(e.target.value)}
+                onChange={e => {
+                  const noSpaces = e.target.value.replace(/\s+/g, '');
+                  setRegUsername(noSpaces);
+                }}
+                onKeyDown={e => {
+                  if (e.key === ' ' || e.code === 'Space') {
+                    e.preventDefault();
+                  }
+                }}
                 placeholder="abdullah_dev"
-                className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                autoComplete="username"
+                className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono"
+                required
               />
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+                اسم المستخدم يجب أن يكون متصلاً تماماً دون أي مسافات (أحرف إنجليزية، أرقام، أو _ .).
+              </p>
             </div>
 
             <div>

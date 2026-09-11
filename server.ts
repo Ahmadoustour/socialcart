@@ -974,7 +974,39 @@ app.delete("/api/products/:id", (req, res) => {
   }
 });
 
-// 8. User Persistence APIs
+// 8. User Persistence APIs & Uniqueness Validation
+app.get(["/api/auth/check-unique", "/api/users/check-unique"], (req, res) => {
+  const { username, email, excludeId } = req.query;
+  const users = readJsonFile<any[]>(USERS_FILE, []);
+  
+  let usernameTaken = false;
+  let emailTaken = false;
+
+  if (username && typeof username === 'string') {
+    const cleanU = username.trim().toLowerCase().replace(/\s+/g, '');
+    usernameTaken = users.some(u => 
+      (!excludeId || u.id !== excludeId) && 
+      u.username && 
+      u.username.trim().toLowerCase().replace(/\s+/g, '') === cleanU
+    );
+  }
+
+  if (email && typeof email === 'string') {
+    const cleanE = email.trim().toLowerCase();
+    emailTaken = users.some(u => 
+      (!excludeId || u.id !== excludeId) && 
+      u.email && 
+      u.email.trim().toLowerCase() === cleanE
+    );
+  }
+
+  res.json({
+    available: !usernameTaken && !emailTaken,
+    usernameTaken,
+    emailTaken
+  });
+});
+
 app.get("/api/users", (req, res) => {
   const users = readJsonFile<any[]>(USERS_FILE, []);
   res.json(users);
@@ -1002,17 +1034,33 @@ app.post("/api/users", (req, res) => {
       return res.status(400).json({ error: "Invalid user data provided" });
     }
     const users = readJsonFile<any[]>(USERS_FILE, []);
-    const existingIndex = users.findIndex(u => 
-      (user.id && u.id === user.id) || 
-      (user.username && u.username && u.username.toLowerCase() === user.username.toLowerCase()) ||
-      (user.email && u.email && u.email.toLowerCase() === user.email.toLowerCase())
-    );
+    
+    // Exact match for UPDATE by user.id
+    const existingIndex = users.findIndex(u => user.id && u.id === user.id);
 
     if (existingIndex >= 0) {
+      // Updating existing user: check if new username or email conflicts with someone else
+      if (user.username) {
+        const cleanU = user.username.trim().toLowerCase().replace(/\s+/g, '');
+        const conflict = users.some(u => u.id !== user.id && u.username && u.username.trim().toLowerCase().replace(/\s+/g, '') === cleanU);
+        if (conflict) {
+          return res.status(409).json({ error: "USERNAME_EXISTS", message: "اسم المستخدم محجوز بالفعل لمستخدم آخر" });
+        }
+      }
+
+      if (user.email) {
+        const cleanE = user.email.trim().toLowerCase();
+        const conflict = users.some(u => u.id !== user.id && u.email && u.email.trim().toLowerCase() === cleanE);
+        if (conflict) {
+          return res.status(409).json({ error: "EMAIL_EXISTS", message: "البريد الإلكتروني مستخدم بالفعل بحساب آخر" });
+        }
+      }
+
       users[existingIndex] = {
         ...users[existingIndex],
         ...user,
-        email: user.email ? user.email : users[existingIndex].email,
+        username: user.username ? user.username.trim().toLowerCase().replace(/\s+/g, '') : users[existingIndex].username,
+        email: user.email ? user.email.trim().toLowerCase() : users[existingIndex].email,
         savedCard: ('savedCard' in user) ? user.savedCard : users[existingIndex].savedCard,
         password: user.password !== undefined ? user.password : users[existingIndex].password,
         bio: user.bio !== undefined ? user.bio : users[existingIndex].bio,
@@ -1021,13 +1069,33 @@ app.post("/api/users", (req, res) => {
       writeJsonFile(USERS_FILE, users);
       return res.json(users[existingIndex]);
     } else {
+      // Creating NEW user (Sign up): STRICT check for duplicate email or username
+      const cleanU = (user.username || '').trim().toLowerCase().replace(/\s+/g, '');
+      const cleanE = (user.email || '').trim().toLowerCase();
+
+      if (cleanE && users.some(u => u.email && u.email.trim().toLowerCase() === cleanE)) {
+        return res.status(409).json({
+          error: "EMAIL_EXISTS",
+          message: "هذا البريد الإلكتروني مسجل مسبقاً بحساب آخر. يرجى تسجيل الدخول بدلاً من إنشاء حساب جديد."
+        });
+      }
+
+      if (cleanU && users.some(u => u.username && u.username.trim().toLowerCase().replace(/\s+/g, '') === cleanU)) {
+        return res.status(409).json({
+          error: "USERNAME_EXISTS",
+          message: "اسم المستخدم هذا محجوز بالفعل لمستخدم آخر. يرجى اختيار اسم مستخدم متاح."
+        });
+      }
+
       const newUser = {
         ...user,
+        username: cleanU,
+        email: cleanE,
         createdAt: user.createdAt || new Date().toISOString()
       };
       users.push(newUser);
       writeJsonFile(USERS_FILE, users);
-      return res.json(newUser);
+      return res.status(201).json(newUser);
     }
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Failed to persist user" });
