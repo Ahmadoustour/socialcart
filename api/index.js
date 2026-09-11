@@ -114,11 +114,39 @@ function getStripe() {
   }
   return stripeClient;
 }
+function resolveGmailCredentials() {
+  let user = (process.env.GMAIL_USER || process.env.GMAIL_EMAIL || process.env.GMAIL_ADDRESS || process.env.GMAIL_ACCOUNT || process.env.EMAIL_USER || process.env.SMTP_USER || process.env.MAIL_USER || "").trim();
+  let pass = (process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_PASSWORD || process.env.GMAIL_PASS || process.env.SMTP_PASS || process.env.EMAIL_PASS || "").trim();
+  if (!user || !pass) {
+    for (const [k, v] of Object.entries(process.env)) {
+      if (!v) continue;
+      const cleanKey = k.trim().toUpperCase();
+      const cleanVal = v.trim();
+      if (!user) {
+        if (cleanKey.includes("GMAIL") && cleanKey.includes("USER")) {
+          user = cleanVal;
+        } else if (cleanKey.includes("MAKANDERSON143@GMAIL.COM")) {
+          user = "makanderson143@gmail.com";
+        } else if (cleanVal.toLowerCase().includes("@gmail.com")) {
+          user = cleanVal;
+        }
+      }
+      if (!pass) {
+        if ((cleanKey.includes("GMAIL") || cleanKey.includes("SMTP")) && (cleanKey.includes("PASS") || cleanKey.includes("PASSWORD"))) {
+          pass = cleanVal;
+        }
+      }
+    }
+  }
+  if (!user && pass) {
+    user = "makanderson143@gmail.com";
+  }
+  user = user.replace(/['"]+/g, "").trim();
+  pass = pass.replace(/['"]+/g, "").replace(/\s+/g, "");
+  return { user, pass };
+}
 function getGmailTransporter(port = 465, secure = true) {
-  const rawUser = process.env.GMAIL_USER?.trim();
-  const rawPass = process.env.GMAIL_APP_PASSWORD?.trim();
-  const user = rawUser ? rawUser.replace(/['"]+/g, "").trim() : "";
-  const pass = rawPass ? rawPass.replace(/['"]+/g, "").replace(/\s+/g, "") : "";
+  const { user, pass } = resolveGmailCredentials();
   if (!user || !pass) {
     return null;
   }
@@ -175,10 +203,7 @@ async function sendSystemEmail({
       console.warn("\u26A0\uFE0F [Resend Network Error]:", resendErr.message);
     }
   }
-  const rawUser = process.env.GMAIL_USER?.trim();
-  const rawPass = process.env.GMAIL_APP_PASSWORD?.trim();
-  const gmailUser = rawUser ? rawUser.replace(/['"]+/g, "").trim() : "";
-  const gmailPass = rawPass ? rawPass.replace(/['"]+/g, "").replace(/\s+/g, "") : "";
+  const { user: gmailUser, pass: gmailPass } = resolveGmailCredentials();
   if (gmailUser && gmailPass) {
     try {
       const transporter465 = getGmailTransporter(465, true);
@@ -240,7 +265,7 @@ async function sendSystemEmail({
       };
     }
   }
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+  if (!gmailUser || !gmailPass) {
     return {
       success: false,
       deliveryStatus: "key_missing",
@@ -254,24 +279,24 @@ async function sendSystemEmail({
   };
 }
 app.get(["/api/health", "/health"], (req, res) => {
+  const { user, pass } = resolveGmailCredentials();
   res.json({
     status: "ok",
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     isVercel: Boolean(process.env.VERCEL),
     integrations: {
       stripe: Boolean(process.env.STRIPE_SECRET_KEY),
-      gmail: Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD),
+      gmail: Boolean(user && pass),
       virustotal: Boolean(process.env.VIRUSTOTAL_API_KEY),
       firebase: Boolean(process.env.VITE_FIREBASE_PROJECT_ID)
     }
   });
 });
 app.get(["/api/email/health", "/email/health"], async (req, res) => {
-  const user = process.env.GMAIL_USER?.trim();
-  const rawPass = process.env.GMAIL_APP_PASSWORD?.trim();
+  const { user, pass } = resolveGmailCredentials();
   const hasUser = Boolean(user);
-  const hasPass = Boolean(rawPass);
-  const transporter = getGmailTransporter();
+  const hasPass = Boolean(pass);
+  const transporter = getGmailTransporter(465, true);
   let smtpVerified = false;
   let smtpVerificationError = null;
   if (transporter) {
@@ -279,7 +304,15 @@ app.get(["/api/email/health", "/email/health"], async (req, res) => {
       await transporter.verify();
       smtpVerified = true;
     } catch (err) {
-      smtpVerificationError = err?.message || String(err);
+      try {
+        const transporter587 = getGmailTransporter(587, false);
+        if (transporter587) {
+          await transporter587.verify();
+          smtpVerified = true;
+        }
+      } catch (err2) {
+        smtpVerificationError = err?.message || String(err);
+      }
     }
   }
   res.json({
