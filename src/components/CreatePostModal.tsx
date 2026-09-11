@@ -11,7 +11,7 @@ import {
   UploadCloud
 } from 'lucide-react';
 import { MediaItem } from '../types';
-import { scanUrlOrFile } from '../utils/security';
+import { scanUrlOrFile, scanUrlLive, scanContentLive } from '../utils/security';
 
 interface CreatePostModalProps {
   isOpen: boolean;
@@ -44,7 +44,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClos
     return /\.(mp4|webm|ogg|mov|mkv)(\?.*)?$/i.test(url) || url.includes('youtube.com') || url.includes('vimeo.com');
   };
 
-  const handleAddMedia = (urlToAdd?: string, typeToAdd?: 'image' | 'video', captionToAdd?: string) => {
+  const handleAddMedia = async (urlToAdd?: string, typeToAdd?: 'image' | 'video', captionToAdd?: string) => {
     const url = urlToAdd || mediaUrlInput.trim();
     const type = typeToAdd || (isVideoUrl(url) ? 'video' : 'image');
     const caption = captionToAdd || mediaCaptionInput.trim();
@@ -54,8 +54,8 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClos
     setIsScanning(true);
     setSecurityError(null);
 
-    // Run security scan
-    const scan = scanUrlOrFile(url);
+    // Run deep security scan on URL or media link
+    const scan = await scanUrlLive(url, type);
     setIsScanning(false);
 
     if (!scan.isSafe) {
@@ -81,8 +81,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClos
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Security check on extension
-    const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+    // Security check on extension and file name
     const scan = scanUrlOrFile(file.name);
     if (!scan.isSafe) {
       setSecurityError(scan.threats.join(' - '));
@@ -105,10 +104,24 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClos
     setMediaList(prev => prev.filter(item => item.id !== idToRemove));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !description.trim()) {
       alert('يرجى كتابة عنوان وتفاصيل للمنشور');
+      return;
+    }
+
+    // Scan the whole post text and media links for malicious content
+    setIsScanning(true);
+    setSecurityError(null);
+    const contentCheck = await scanContentLive(
+      `${title} ${description}`,
+      mediaList.map(m => m.url)
+    );
+    setIsScanning(false);
+
+    if (!contentCheck.isSafe) {
+      setSecurityError(`تم منع النشر: ${contentCheck.threats.join(' | ')}`);
       return;
     }
 

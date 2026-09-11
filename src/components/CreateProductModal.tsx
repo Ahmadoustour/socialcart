@@ -13,7 +13,7 @@ import {
   Sparkles 
 } from 'lucide-react';
 import { MediaItem } from '../types';
-import { scanUrlOrFile } from '../utils/security';
+import { scanUrlOrFile, scanUrlLive, scanContentLive } from '../utils/security';
 
 interface CreateProductModalProps {
   isOpen: boolean;
@@ -50,15 +50,15 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({ isOpen, 
 
   const CATEGORIES = ['تصاميم وجرافيك', 'برمجة وتطوير', 'كتب وأدلة رقمية', 'قوالب وأدوات'];
 
-  const handleAddMedia = (urlToAdd?: string, typeToAdd?: 'image' | 'video', captionToAdd?: string) => {
+  const handleAddMedia = async (urlToAdd?: string, typeToAdd?: 'image' | 'video', captionToAdd?: string) => {
     const url = urlToAdd || mediaUrlInput.trim();
     const type = typeToAdd || mediaType;
     const caption = captionToAdd || mediaCaptionInput.trim();
 
     if (!url) return;
 
-    // Security check
-    const scan = scanUrlOrFile(url);
+    // Deep Security check
+    const scan = await scanUrlLive(url, type);
     if (!scan.isSafe) {
       setSecurityError(scan.threats.join(' - '));
       return;
@@ -102,17 +102,27 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({ isOpen, 
     setMediaList(prev => prev.filter(item => item.id !== idToRemove));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !description.trim() || !price || !fileUrl.trim()) {
       alert('يرجى ملء جميع الحقول الإلزامية وتوفير رابط الملف الرقمي');
       return;
     }
 
-    // Scan digital file URL for security
-    const scan = scanUrlOrFile(fileUrl);
+    // 1. Scan digital file URL for security
+    const scan = await scanUrlLive(fileUrl, 'file');
     if (!scan.isSafe) {
       alert(`تحذير أمني بخصوص رابط الملف الرقمي:\n${scan.threats.join('\n')}`);
+      return;
+    }
+
+    // 2. Scan entire description and media list for embedded threats
+    const contentCheck = await scanContentLive(
+      `${title} ${description}`,
+      [fileUrl, ...mediaList.map(m => m.url)]
+    );
+    if (!contentCheck.isSafe) {
+      alert(`تم رفض نشر المنتج بسبب محتوى غير آمن:\n${contentCheck.threats.join('\n')}`);
       return;
     }
 

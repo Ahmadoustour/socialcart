@@ -18,7 +18,7 @@ import { AuthModal } from './components/AuthModal';
 import { AccountMenuModal } from './components/AccountMenuModal';
 
 import { auth } from './lib/firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signOut, updatePassword, updateProfile, updateEmail } from 'firebase/auth';
 import { 
   User, 
   Post, 
@@ -231,32 +231,106 @@ export default function App() {
       .catch(err => console.log('Notice: using local products cache:', err));
   }, []);
 
-  // Sync Firebase Auth state
+  // Sync Firebase Auth state & merge with local/server profiles to preserve password, card, bio, etc.
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (fbUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
-        const appUser: User = {
+        const savedUserStr = localStorage.getItem('socialcart_user');
+        let existingUser: Partial<User> = {};
+        if (savedUserStr) {
+          try {
+            const parsed = JSON.parse(savedUserStr);
+            if (parsed && parsed.id !== 'guest') existingUser = parsed;
+          } catch {}
+        }
+
+        const registeredStr = localStorage.getItem('socialcart_registered_users');
+        let registeredUsers: User[] = [];
+        if (registeredStr) {
+          try { registeredUsers = JSON.parse(registeredStr); } catch {}
+        }
+        const matchedReg = registeredUsers.find(u => 
+          u.id === fbUser.uid || (fbUser.email && u.email?.toLowerCase() === fbUser.email.toLowerCase())
+        );
+
+        // Also check if server has saved profile
+        let serverUser: Partial<User> = {};
+        try {
+          const res = await fetch(`/api/users/${encodeURIComponent(fbUser.uid)}`);
+          if (res.ok) {
+            serverUser = await res.json();
+          } else if (fbUser.email) {
+            const res2 = await fetch(`/api/users/${encodeURIComponent(fbUser.email)}`);
+            if (res2.ok) serverUser = await res2.json();
+          }
+        } catch {}
+
+        const mergedUser: User = {
           id: fbUser.uid,
-          username: fbUser.displayName ? fbUser.displayName.toLowerCase().replace(/\s+/g, '_') : (fbUser.email?.split('@')[0] || 'user'),
-          displayName: fbUser.displayName || fbUser.email?.split('@')[0] || 'مستخدم مسجل',
-          email: fbUser.email || '',
-          avatar: fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-          joinedDate: 'سبتمبر 2026',
-          isVerifiedSeller: false,
-          sellerRating: 0,
-          sellerReviewsCount: 0,
-          totalSales: 0,
-          trustScore: 100,
-          isEmailVerified: fbUser.emailVerified,
-          twoFactorEnabled: false
+          username: existingUser.username || matchedReg?.username || serverUser.username || (fbUser.displayName ? fbUser.displayName.toLowerCase().replace(/\s+/g, '_') : (fbUser.email?.split('@')[0] || 'user')),
+          displayName: existingUser.displayName || matchedReg?.displayName || serverUser.displayName || fbUser.displayName || fbUser.email?.split('@')[0] || 'مستخدم مسجل',
+          email: fbUser.email || existingUser.email || matchedReg?.email || serverUser.email || '',
+          avatar: existingUser.avatar || matchedReg?.avatar || serverUser.avatar || fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+          bio: existingUser.bio !== undefined ? existingUser.bio : (matchedReg?.bio !== undefined ? matchedReg.bio : (serverUser.bio !== undefined ? serverUser.bio : '')),
+          savedCard: existingUser.savedCard || matchedReg?.savedCard || serverUser.savedCard,
+          password: existingUser.password || matchedReg?.password || serverUser.password,
+          joinedDate: existingUser.joinedDate || matchedReg?.joinedDate || serverUser.joinedDate || 'سبتمبر 2026',
+          isVerifiedSeller: existingUser.isVerifiedSeller ?? matchedReg?.isVerifiedSeller ?? serverUser.isVerifiedSeller ?? false,
+          sellerRating: existingUser.sellerRating ?? matchedReg?.sellerRating ?? serverUser.sellerRating ?? 0,
+          sellerReviewsCount: existingUser.sellerReviewsCount ?? matchedReg?.sellerReviewsCount ?? serverUser.sellerReviewsCount ?? 0,
+          totalSales: existingUser.totalSales ?? matchedReg?.totalSales ?? serverUser.totalSales ?? 0,
+          trustScore: existingUser.trustScore ?? matchedReg?.trustScore ?? serverUser.trustScore ?? 100,
+          isEmailVerified: fbUser.emailVerified ?? existingUser.isEmailVerified ?? matchedReg?.isEmailVerified ?? false,
+          twoFactorEnabled: existingUser.twoFactorEnabled ?? matchedReg?.twoFactorEnabled ?? false
         };
-        setCurrentUser(appUser);
+
+        setCurrentUser(mergedUser);
         setIsLoggedIn(true);
         localStorage.setItem('socialcart_logged_in', 'true');
-        localStorage.setItem('socialcart_user', JSON.stringify(appUser));
+        localStorage.setItem('socialcart_user', JSON.stringify(mergedUser));
+
+        // Update in registered users list
+        const regIdx = registeredUsers.findIndex(u => u.id === mergedUser.id || (u.email && u.email.toLowerCase() === mergedUser.email.toLowerCase()));
+        if (regIdx >= 0) {
+          registeredUsers[regIdx] = { ...registeredUsers[regIdx], ...mergedUser };
+        } else {
+          registeredUsers.push(mergedUser);
+        }
+        localStorage.setItem('socialcart_registered_users', JSON.stringify(registeredUsers));
+
+        // Persist to server
+        fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(mergedUser)
+        }).catch(() => {});
       }
     });
     return () => unsubscribe();
+  }, []);
+
+  // Sync server profile on mount if already logged in
+  useEffect(() => {
+    const savedUserStr = localStorage.getItem('socialcart_user');
+    if (savedUserStr) {
+      try {
+        const u = JSON.parse(savedUserStr);
+        if (u && u.id && u.id !== 'guest') {
+          fetch(`/api/users/${encodeURIComponent(u.id)}`)
+            .then(res => res.ok ? res.json() : null)
+            .then(serverUser => {
+              if (serverUser) {
+                setCurrentUser(prev => {
+                  const merged = { ...prev, ...serverUser };
+                  localStorage.setItem('socialcart_user', JSON.stringify(merged));
+                  return merged;
+                });
+              }
+            })
+            .catch(() => {});
+        }
+      } catch {}
+    }
   }, []);
 
   // Modals
@@ -270,10 +344,43 @@ export default function App() {
 
   // Auth Handlers
   const handleLoginSuccess = (user: User) => {
-    setCurrentUser(user);
+    const registeredStr = localStorage.getItem('socialcart_registered_users');
+    let registeredUsers: User[] = [];
+    if (registeredStr) {
+      try { registeredUsers = JSON.parse(registeredStr); } catch {}
+    }
+    const existing = registeredUsers.find(u => 
+      u.id === user.id || 
+      (u.email && user.email && u.email.toLowerCase() === user.email.toLowerCase()) ||
+      (u.username && user.username && u.username.toLowerCase() === user.username.toLowerCase())
+    );
+
+    const mergedUser: User = existing ? {
+      ...existing,
+      ...user,
+      password: user.password || existing.password,
+      savedCard: user.savedCard || existing.savedCard,
+      bio: user.bio !== undefined ? user.bio : existing.bio,
+    } : user;
+
+    setCurrentUser(mergedUser);
     setIsLoggedIn(true);
     localStorage.setItem('socialcart_logged_in', 'true');
-    localStorage.setItem('socialcart_user', JSON.stringify(user));
+    localStorage.setItem('socialcart_user', JSON.stringify(mergedUser));
+
+    const idx = registeredUsers.findIndex(u => u.id === mergedUser.id || (u.email && u.email.toLowerCase() === mergedUser.email.toLowerCase()));
+    if (idx >= 0) {
+      registeredUsers[idx] = { ...registeredUsers[idx], ...mergedUser };
+    } else {
+      registeredUsers.push(mergedUser);
+    }
+    localStorage.setItem('socialcart_registered_users', JSON.stringify(registeredUsers));
+
+    fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(mergedUser)
+    }).catch(() => {});
   };
 
   const handleLogout = async () => {
@@ -925,28 +1032,123 @@ export default function App() {
     );
   };
 
-  // 8. Profile Update Handler
+  // 8. Profile Update Handler (Saves Name, Username, Bio, Password, Card, Email locally & to server)
   const handleUpdateProfile = (updated: Partial<User>) => {
+    let nextUser: User = { ...currentUser, ...updated };
+
     setCurrentUser(prev => {
-      const nextUser = { ...prev, ...updated };
+      nextUser = { ...prev, ...updated };
       return nextUser;
     });
 
+    // 1. Immediately persist to active user localStorage
+    localStorage.setItem('socialcart_user', JSON.stringify(nextUser));
+
+    // 2. Persist to registered users list for multi-account / relogin caching
+    const registeredStr = localStorage.getItem('socialcart_registered_users');
+    let registeredUsers: User[] = [];
+    if (registeredStr) {
+      try { registeredUsers = JSON.parse(registeredStr); } catch {}
+    }
+    const idx = registeredUsers.findIndex(u => 
+      (nextUser.id && u.id === nextUser.id) || 
+      (nextUser.email && u.email && u.email.toLowerCase() === nextUser.email.toLowerCase()) ||
+      (nextUser.username && u.username && u.username.toLowerCase() === nextUser.username.toLowerCase())
+    );
+    if (idx >= 0) {
+      registeredUsers[idx] = { ...registeredUsers[idx], ...nextUser };
+    } else {
+      registeredUsers.push(nextUser);
+    }
+    localStorage.setItem('socialcart_registered_users', JSON.stringify(registeredUsers));
+
+    // 3. Persist to server REST API in data/users.json
+    fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(nextUser)
+    }).catch(err => console.warn('Server user persistence note:', err));
+
+    // 4. If logged into Firebase Auth, synchronize credentials safely
+    if (auth.currentUser) {
+      if (updated.password) {
+        updatePassword(auth.currentUser, updated.password).catch(err => 
+          console.log('Notice: Firebase password update:', err.message)
+        );
+      }
+      if (updated.displayName || updated.avatar) {
+        updateProfile(auth.currentUser, {
+          displayName: updated.displayName || auth.currentUser.displayName,
+          photoURL: updated.avatar || auth.currentUser.photoURL
+        }).catch(err => console.log('Notice: Firebase profile update:', err.message));
+      }
+      if (updated.email && updated.email !== auth.currentUser.email) {
+        updateEmail(auth.currentUser, updated.email).catch(err => 
+          console.log('Notice: Firebase email update:', err.message)
+        );
+      }
+    }
+
+    // 5. If avatar, displayName or username changed, synchronize authored posts & products
     if (updated.avatar || updated.displayName || updated.username) {
-      setPosts(prevPosts => prevPosts.map(post => {
-        if (post.author.id === currentUser.id || post.author.username === currentUser.username) {
-          return {
-            ...post,
-            author: {
-              ...post.author,
-              displayName: updated.displayName || post.author.displayName,
-              username: updated.username || post.author.username,
-              avatar: updated.avatar || post.author.avatar,
-            }
-          };
-        }
-        return post;
-      }));
+      const oldUsername = currentUser.username;
+      const newUsername = updated.username || oldUsername;
+      const newDisplayName = updated.displayName || currentUser.displayName;
+      const newAvatar = updated.avatar || currentUser.avatar;
+
+      setPosts(prevPosts => {
+        const nextPosts = prevPosts.map(post => {
+          if (post.author.id === currentUser.id || post.author.username === oldUsername) {
+            return {
+              ...post,
+              author: {
+                ...post.author,
+                displayName: newDisplayName,
+                username: newUsername,
+                avatar: newAvatar,
+              }
+            };
+          }
+          return post;
+        });
+        nextPosts.forEach(p => {
+          if (p.author.id === currentUser.id || p.author.username === newUsername) {
+            fetch('/api/posts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(p)
+            }).catch(() => {});
+          }
+        });
+        return nextPosts;
+      });
+
+      setProducts(prevProducts => {
+        const nextProds = prevProducts.map(prod => {
+          if (prod.seller?.username === oldUsername || prod.seller?.username === newUsername) {
+            return {
+              ...prod,
+              seller: {
+                ...prod.seller,
+                displayName: newDisplayName,
+                username: newUsername,
+                avatar: newAvatar,
+              }
+            };
+          }
+          return prod;
+        });
+        nextProds.forEach(p => {
+          if (p.seller?.username === newUsername) {
+            fetch('/api/products', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(p)
+            }).catch(() => {});
+          }
+        });
+        return nextProds;
+      });
     }
   };
 
@@ -1299,6 +1501,7 @@ export default function App() {
         items={checkoutItems}
         currentUser={currentUser}
         onCheckoutComplete={handleCheckoutComplete}
+        onUpdateProfile={handleUpdateProfile}
       />
 
       {/* 4. Seller Rating & Review Modal */}

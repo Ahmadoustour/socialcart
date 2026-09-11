@@ -106,22 +106,49 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       // 1. Attempt real Firebase Authentication
       const userCredential = await signInWithEmailAndPassword(auth, emailToAuth, loginPassword);
       const fbUser = userCredential.user;
+
+      const savedUsersStr = localStorage.getItem('socialcart_registered_users');
+      const savedUsers: User[] = savedUsersStr ? JSON.parse(savedUsersStr) : [];
+      const userMatch = savedUsers.find(u => 
+        u.id === fbUser.uid || 
+        (u.email && u.email.toLowerCase() === emailToAuth.toLowerCase()) ||
+        (u.username && u.username.toLowerCase() === identifier.toLowerCase())
+      );
       
       const appUser: User = {
         id: fbUser.uid,
-        username: fbUser.displayName ? fbUser.displayName.toLowerCase().replace(/\s+/g, '_') : (fbUser.email?.split('@')[0] || 'user'),
-        displayName: fbUser.displayName || fbUser.email?.split('@')[0] || 'مستخدم مسجل',
+        username: userMatch?.username || (fbUser.displayName ? fbUser.displayName.toLowerCase().replace(/\s+/g, '_') : (fbUser.email?.split('@')[0] || 'user')),
+        displayName: userMatch?.displayName || fbUser.displayName || fbUser.email?.split('@')[0] || 'مستخدم مسجل',
         email: fbUser.email || emailToAuth,
-        avatar: fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-        joinedDate: 'سبتمبر 2026',
-        isVerifiedSeller: false,
-        sellerRating: 0,
-        sellerReviewsCount: 0,
-        totalSales: 0,
-        trustScore: 100,
-        isEmailVerified: fbUser.emailVerified,
-        twoFactorEnabled: false
+        avatar: userMatch?.avatar || fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+        bio: userMatch?.bio !== undefined ? userMatch.bio : 'عضو في منصة سوشيال كارت.',
+        savedCard: userMatch?.savedCard,
+        password: loginPassword || userMatch?.password,
+        joinedDate: userMatch?.joinedDate || 'سبتمبر 2026',
+        isVerifiedSeller: userMatch?.isVerifiedSeller ?? false,
+        sellerRating: userMatch?.sellerRating ?? 0,
+        sellerReviewsCount: userMatch?.sellerReviewsCount ?? 0,
+        totalSales: userMatch?.totalSales ?? 0,
+        trustScore: userMatch?.trustScore ?? 100,
+        isEmailVerified: fbUser.emailVerified ?? userMatch?.isEmailVerified ?? false,
+        twoFactorEnabled: userMatch?.twoFactorEnabled ?? false
       };
+
+      // Ensure cached in registered list with latest password
+      const matchIdx = savedUsers.findIndex(u => u.id === appUser.id || (u.email && u.email.toLowerCase() === appUser.email.toLowerCase()));
+      if (matchIdx >= 0) {
+        savedUsers[matchIdx] = { ...savedUsers[matchIdx], ...appUser };
+      } else {
+        savedUsers.push(appUser);
+      }
+      localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
+
+      // Persist to server
+      fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(appUser)
+      }).catch(() => {});
 
       setSuccessMsg(`أهلاً بك مجدداً يا ${appUser.displayName}! تم تسجيل الدخول بنجاح 🛡️`);
       setTimeout(() => {
@@ -180,21 +207,47 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const fbUser = result.user;
+
+      const savedUsersStr = localStorage.getItem('socialcart_registered_users');
+      const savedUsers: User[] = savedUsersStr ? JSON.parse(savedUsersStr) : [];
+      const userMatch = savedUsers.find(u => 
+        u.id === fbUser.uid || 
+        (u.email && fbUser.email && u.email.toLowerCase() === fbUser.email.toLowerCase())
+      );
+
       const appUser: User = {
         id: fbUser.uid,
-        username: (fbUser.displayName || 'user').toLowerCase().replace(/\s+/g, '_'),
-        displayName: fbUser.displayName || 'مستخدم جوجل',
-        email: fbUser.email || 'user@example.com',
-        avatar: fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-        joinedDate: 'سبتمبر 2026',
-        isVerifiedSeller: false,
-        sellerRating: 0,
-        sellerReviewsCount: 0,
-        totalSales: 0,
-        trustScore: 100,
-        isEmailVerified: fbUser.emailVerified,
-        twoFactorEnabled: false
+        username: userMatch?.username || (fbUser.displayName || 'user').toLowerCase().replace(/\s+/g, '_'),
+        displayName: userMatch?.displayName || fbUser.displayName || 'مستخدم جوجل',
+        email: fbUser.email || userMatch?.email || 'user@example.com',
+        avatar: userMatch?.avatar || fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+        bio: userMatch?.bio !== undefined ? userMatch.bio : 'عضو في منصة سوشيال كارت.',
+        savedCard: userMatch?.savedCard,
+        password: userMatch?.password,
+        joinedDate: userMatch?.joinedDate || 'سبتمبر 2026',
+        isVerifiedSeller: userMatch?.isVerifiedSeller ?? false,
+        sellerRating: userMatch?.sellerRating ?? 0,
+        sellerReviewsCount: userMatch?.sellerReviewsCount ?? 0,
+        totalSales: userMatch?.totalSales ?? 0,
+        trustScore: userMatch?.trustScore ?? 100,
+        isEmailVerified: fbUser.emailVerified ?? userMatch?.isEmailVerified ?? false,
+        twoFactorEnabled: userMatch?.twoFactorEnabled ?? false
       };
+
+      const matchIdx = savedUsers.findIndex(u => u.id === appUser.id || (u.email && u.email.toLowerCase() === appUser.email.toLowerCase()));
+      if (matchIdx >= 0) {
+        savedUsers[matchIdx] = { ...savedUsers[matchIdx], ...appUser };
+      } else {
+        savedUsers.push(appUser);
+      }
+      localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
+
+      fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(appUser)
+      }).catch(() => {});
+
       setSuccessMsg(`أهلاً بك يا ${appUser.displayName}! تم تسجيل الدخول عبر Google بنجاح 🛡️`);
       setTimeout(() => {
         onLoginSuccess(appUser);
@@ -289,11 +342,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         twoFactorEnabled: false
       };
 
-      // Also persist locally for fast offline retrieval
+      // Also persist locally for fast offline retrieval and to server
       const savedUsersStr = localStorage.getItem('socialcart_registered_users');
       const savedUsers: any[] = savedUsersStr ? JSON.parse(savedUsersStr) : [];
       savedUsers.push(newUser);
       localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
+
+      fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser)
+      }).catch(() => {});
 
       setSuccessMsg(`تهانينا يا ${cleanName}! تم إنشاء حسابك وتوثيقه بنجاح 🛡️`);
       setTimeout(() => {
@@ -333,6 +392,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         const savedUsers: any[] = savedUsersStr ? JSON.parse(savedUsersStr) : [];
         savedUsers.push(newUser);
         localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
+
+        fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newUser)
+        }).catch(() => {});
 
         setSuccessMsg(`تم إنشاء حسابك بنجاح يا ${cleanName}!`);
         setTimeout(() => {

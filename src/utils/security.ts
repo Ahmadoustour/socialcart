@@ -150,85 +150,177 @@ export interface SecurityScanResult {
 
 const DANGEROUS_EXTENSIONS = [
   '.exe', '.bat', '.cmd', '.scr', '.vbs', '.js', '.jar', '.msi', '.pif', '.hta', '.reg',
-  '.ps1', '.sh', '.bin', '.com', '.cpl', '.gadget', '.inf', '.ins', '.inx', '.isu', '.job'
+  '.ps1', '.sh', '.bin', '.com', '.cpl', '.gadget', '.inf', '.ins', '.inx', '.isu', '.job',
+  '.wsf', '.vbe', '.jse', '.dll', '.scr', '.py', '.php', '.asp', '.aspx', '.jsp'
 ];
 
 const SUSPICIOUS_DOMAINS = [
   'free-crypto', 'claim-gift', 'free-download-now', 'hack-', 'phish', 'login-verify-account',
-  'account-security-update', 'paypal-secure-login', 'apple-id-verify'
+  'account-security-update', 'paypal-secure-login', 'apple-id-verify', 'steam-gift', 'discord-nitro-gift'
 ];
+
+const HIGH_RISK_TLDS = ['.top', '.xyz', '.tk', '.ml', '.ga', '.cf', '.gq', '.buzz', '.fit', '.pw'];
 
 export function scanUrlOrFile(url: string): SecurityScanResult {
   const threats: string[] = [];
-  const lower = url.toLowerCase().trim();
+  const lower = (url || '').toLowerCase().trim();
 
-  // Check protocol
+  // 1. Check protocol schemes
   let protocol: 'https' | 'http' | 'blob' | 'unknown' = 'unknown';
   if (lower.startsWith('https://')) protocol = 'https';
   else if (lower.startsWith('http://')) protocol = 'http';
   else if (lower.startsWith('data:') || lower.startsWith('blob:')) protocol = 'blob';
 
   if (protocol === 'http') {
-    threats.push('الرابط يستخدم بروتوكول HTTP غير المشفر وغير الآمن');
+    threats.push('الرابط يستخدم بروتوكول HTTP غير المشفر وغير الآمن.');
   }
 
-  // Check dangerous executable extensions
+  // 2. Check for script injection or dangerous code inside Data URI / Media string
+  if (lower.startsWith('javascript:')) {
+    threats.push('تم حظر الرابط: يحتوي على بروتوكول javascript: غير مسموح.');
+  }
+  if (lower.includes('<script') || lower.includes('javascript:') || lower.includes('onerror=') || lower.includes('onload=')) {
+    threats.push('تم اكتشاف أوامر برمجية أو سكريبتات مشبوهة مدمجة داخل الوسائط أو الرابط.');
+  }
+  if (lower.includes('<iframe') || lower.includes('document.cookie') || lower.includes('window.location')) {
+    threats.push('تم اكتشاف محاولة إدراج كود خبيث أو محاولة تحويل غير شرعية.');
+  }
+
+  // 3. Check dangerous executable extensions
   for (const ext of DANGEROUS_EXTENSIONS) {
     if (lower.includes(ext)) {
-      threats.push(`تم اكتشاف امتداد ملف تنفيذي خطر (${ext}) قد يحوي برمجيات خبيثة أو برامج فدية`);
+      threats.push(`تم اكتشاف امتداد ملف تنفيذي خطر (${ext}) قد يحوي برمجيات خبيثة أو برامج فدية.`);
       break;
     }
   }
 
-  // Check suspicious phishing patterns
+  // 4. Check for double extension spoofing (e.g. video.mp4.exe, image.png.bat)
+  if (/\.(mp4|webm|jpg|jpeg|png|gif|webp|svg|pdf)\.[a-z0-9]{2,4}(\?.*)?$/i.test(lower)) {
+    threats.push('تم كشف محاولة تمويه خبيثة للملف (Double Extension Spoofing).');
+  }
+
+  // 5. Check suspicious phishing patterns
   for (const domain of SUSPICIOUS_DOMAINS) {
     if (lower.includes(domain)) {
-      threats.push(`تم حظر النطاق لأنه مسجل في قوائم التصيد الاحتيالي (${domain})`);
+      threats.push(`تم حظر النطاق لأنه مسجل في قوائم التصيد والاحتيال (${domain}).`);
       break;
     }
   }
 
-  // Check direct IP addresses in URLs (common in malicious servers)
+  // 6. Check direct IP addresses in URLs (common in malicious servers)
   if (/https?:\/\/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(lower)) {
-    threats.push('الرابط يشير مباشرة إلى عنوان IP غير موثوق بدلاً من اسم نطاق رسمي معتمد');
+    threats.push('الرابط يشير مباشرة إلى عنوان IP غير موثوق بدلاً من اسم نطاق رسمي معتمد.');
+  }
+
+  // 7. Check high-risk malicious TLDs
+  for (const tld of HIGH_RISK_TLDS) {
+    if (lower.includes(tld + '/') || lower.endsWith(tld)) {
+      threats.push(`الرابط ينتمي إلى نطاق عالي الخطورة (${tld}) تكثر فيه البرمجيات الضارة.`);
+      break;
+    }
   }
 
   const isSafe = threats.length === 0;
-  const score = isSafe ? 100 : Math.max(10, 100 - threats.length * 40);
+  const score = isSafe ? 100 : Math.max(10, 100 - threats.length * 35);
 
   return { isSafe, score, threats, protocol };
 }
 
 /**
- * Live URL scanning using server-side VirusTotal API
+ * Live URL & Media scanning using server-side VirusTotal & Deep Antivirus Engine
  */
-export async function scanUrlLive(url: string): Promise<SecurityScanResult & { scannedBy?: string }> {
+export async function scanUrlLive(url: string, type?: 'image' | 'video' | 'link' | 'file'): Promise<SecurityScanResult & { scannedBy?: string }> {
   const localResult = scanUrlOrFile(url);
   if (!localResult.isSafe) {
-    return { ...localResult, scannedBy: 'Local Security Heuristics' };
+    return { ...localResult, scannedBy: 'Local Security Heuristics & Content Filter' };
   }
 
   try {
     const res = await fetch('/api/security/scan-url', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url })
+      body: JSON.stringify({ url, type })
     });
     if (res.ok) {
       const data = await res.json();
       return {
         isSafe: data.isSafe ?? true,
-        score: data.isSafe ? 100 : 20,
+        score: data.score ?? (data.isSafe ? 100 : 20),
         threats: data.threats || [],
-        protocol: url.startsWith('https://') ? 'https' : 'http',
+        protocol: url.startsWith('https://') ? 'https' : (url.startsWith('http://') ? 'http' : 'blob'),
         scannedBy: data.scannedBy || 'VirusTotal Cloud Antivirus'
       };
     }
   } catch (e) {
-    console.warn('Live URL scan query error:', e);
+    console.warn('Live URL scan query note:', e);
   }
 
-  return { ...localResult, scannedBy: 'Local Security Heuristics' };
+  return { ...localResult, scannedBy: 'Local Deep Heuristics' };
+}
+
+/**
+ * Scans whole text description and multiple media URLs for malicious links
+ */
+export async function scanContentLive(text: string, mediaUrls: string[] = []): Promise<{ isSafe: boolean; threats: string[]; score: number }> {
+  try {
+    const res = await fetch('/api/security/scan-content', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, mediaUrls })
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('Scan content error:', err);
+  }
+
+  // Fallback client check
+  const threats: string[] = [];
+  const urlRegex = /(https?:\/\/[^\s]+)/gi;
+  const matches = text.match(urlRegex) || [];
+  for (const u of matches) {
+    const s = scanUrlOrFile(u);
+    if (!s.isSafe) threats.push(`رابط مشبوه في النص [${u}]: ${s.threats.join(' - ')}`);
+  }
+  for (const m of mediaUrls) {
+    const s = scanUrlOrFile(m);
+    if (!s.isSafe) threats.push(`ملف وسائط مشبوه: ${s.threats.join(' - ')}`);
+  }
+  return {
+    isSafe: threats.length === 0,
+    threats,
+    score: threats.length === 0 ? 100 : Math.max(10, 100 - threats.length * 30)
+  };
+}
+
+/**
+ * Send security email alert for card changes, deletions, and email changes
+ */
+export async function sendSecurityAlertEmail(params: {
+  email: string;
+  username?: string;
+  actionType: 'card_added' | 'card_updated' | 'card_removed' | 'card_change_requested' | 'card_removal_requested' | 'email_change_requested' | 'email_changed';
+  cardLast4?: string;
+  cardType?: string;
+  oldEmail?: string;
+  newEmail?: string;
+  otpCode?: string;
+}): Promise<{ success: boolean; message: string }> {
+  try {
+    const res = await fetch('/api/email/security-alert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return { success: true, message: data.message || 'تم إرسال الإشعار الأمني بنجاح.' };
+    }
+  } catch (err: any) {
+    console.warn('Security alert request failed:', err);
+  }
+  return { success: false, message: 'تعذر إرسال الإشعار الأمني إلى البريد الإلكتروني.' };
 }
 
 /**

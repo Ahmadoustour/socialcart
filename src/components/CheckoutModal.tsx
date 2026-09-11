@@ -24,6 +24,7 @@ interface CheckoutModalProps {
     totalPaid: number;
     paymentMethod: string;
   }) => void;
+  onUpdateProfile?: (updated: Partial<User>) => void;
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
@@ -31,7 +32,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onClose,
   items,
   currentUser,
-  onCheckoutComplete
+  onCheckoutComplete,
+  onUpdateProfile
 }) => {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [paymentChoice, setPaymentChoice] = useState<'saved' | 'new'>(currentUser.savedCard ? 'saved' : 'new');
@@ -41,6 +43,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [newCardHolder, setNewCardHolder] = useState(currentUser.displayName.toUpperCase());
   const [newExpiry, setNewExpiry] = useState('');
   const [newCvv, setNewCvv] = useState('');
+  const [saveCardToProfile, setSaveCardToProfile] = useState(true);
   const [cardError, setCardError] = useState<string | null>(null);
 
   // 3D-Secure SMS/OTP confirmation code
@@ -117,6 +120,21 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       setIsProcessing(false);
       setStep(4);
+
+      if (paymentChoice === 'new' && saveCardToProfile && onUpdateProfile) {
+        const sanitized = newCardNumber.replace(/\D/g, '');
+        const last4 = sanitized.slice(-4) || '4242';
+        onUpdateProfile({
+          savedCard: {
+            cardNumber: `•••• •••• •••• ${last4}`,
+            cardHolder: (newCardHolder || currentUser.displayName).trim().toUpperCase(),
+            expiry: newExpiry.trim(),
+            cardType: sanitized.startsWith('5') ? 'mastercard' : 'visa',
+            last4
+          }
+        });
+      }
+
       onCheckoutComplete({
         items,
         totalPaid: totalAmount,
@@ -305,6 +323,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       />
                     </div>
                   </div>
+
+                  <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-slate-600 dark:text-slate-300 font-bold pt-1">
+                    <input
+                      type="checkbox"
+                      checked={saveCardToProfile}
+                      onChange={(e) => setSaveCardToProfile(e.target.checked)}
+                      className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                    />
+                    <span>حفظ بيانات هذه البطاقة في ملفي الشخصي للاستخدام السريع مستقبلاً 💳</span>
+                  </label>
                 </div>
               )}
             </div>

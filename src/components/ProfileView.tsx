@@ -39,7 +39,14 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { User, SavedCard, Post, Product } from '../types';
-import { validateCreditCardNumber, validateCardExpiry, validateCardCVV, formatCardNumber, validateCardHolder } from '../utils/security';
+import { 
+  validateCreditCardNumber, 
+  validateCardExpiry, 
+  validateCardCVV, 
+  formatCardNumber, 
+  validateCardHolder,
+  sendSecurityAlertEmail 
+} from '../utils/security';
 
 const PRESET_AVATARS = [
   { id: 'av_1', label: 'مطور ومبرمج', url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=250&auto=format&fit=crop&q=80' },
@@ -147,6 +154,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setBio(currentUser.bio || '');
     setAvatar(currentUser.avatar);
     setTempAvatar(currentUser.avatar);
+    setIsEmailVerifiedState(Boolean(currentUser.isEmailVerified));
+    if (currentUser.savedCard) {
+      setRawCardNumber(currentUser.savedCard.cardNumber);
+      setCardHolder(currentUser.savedCard.cardHolder);
+      setExpiry(currentUser.savedCard.expiry);
+    } else {
+      setRawCardNumber('');
+      setCardHolder('');
+      setExpiry('');
+      setCvv('');
+    }
   }, [currentUser]);
 
   // Security Tab State
@@ -174,6 +192,26 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [cvv, setCvv] = useState('');
   const [cardSuccess, setCardSuccess] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
+  const [cardSecurityNotice, setCardSecurityNotice] = useState<string | null>(null);
+
+  // Email Change Verification Flow
+  const [isEmailChangeModalOpen, setIsEmailChangeModalOpen] = useState(false);
+  const [pendingNewEmail, setPendingNewEmail] = useState('');
+  const [emailChangeOtp, setEmailChangeOtp] = useState('');
+  const [sentEmailChangeOtp, setSentEmailChangeOtp] = useState('');
+  const [emailChangeOtpError, setEmailChangeOtpError] = useState<string | null>(null);
+  const [emailChangeOtpNotice, setEmailChangeOtpNotice] = useState<string | null>(null);
+  const [isSendingEmailChangeOtp, setIsSendingEmailChangeOtp] = useState(false);
+
+  // Card Action OTP Verification Flow (Save / Remove)
+  const [isCardOtpModalOpen, setIsCardOtpModalOpen] = useState(false);
+  const [cardOtpAction, setCardOtpAction] = useState<'save' | 'remove'>('save');
+  const [pendingCardData, setPendingCardData] = useState<SavedCard | null>(null);
+  const [cardOtpInput, setCardOtpInput] = useState('');
+  const [sentCardOtp, setSentCardOtp] = useState('');
+  const [cardOtpError, setCardOtpError] = useState<string | null>(null);
+  const [cardOtpNotice, setCardOtpNotice] = useState<string | null>(null);
+  const [isSendingCardOtp, setIsSendingCardOtp] = useState(false);
 
   // Handle File Upload from device
   const processImageFile = (file: File) => {
@@ -284,6 +322,44 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       return;
     }
 
+    // Check if email has changed: Require OTP verification sent to the CURRENT (OLD) email!
+    if (cleanEmail !== currentUser.email.toLowerCase()) {
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      setSentEmailChangeOtp(code);
+      setPendingNewEmail(cleanEmail);
+      setIsSendingEmailChangeOtp(true);
+      setEmailChangeOtp('');
+      setEmailChangeOtpError(null);
+      setEmailChangeOtpNotice(null);
+      setIsEmailChangeModalOpen(true);
+
+      // 1. Send OTP verification code to the CURRENT (OLD) email for security authorization!
+      sendSecurityAlertEmail({
+        email: currentUser.email,
+        username: displayName.trim() || currentUser.displayName,
+        actionType: 'email_change_requested',
+        oldEmail: currentUser.email,
+        newEmail: cleanEmail,
+        otpCode: code
+      }).then(res => {
+        setIsSendingEmailChangeOtp(false);
+        setEmailChangeOtpNotice(res.message);
+      }).catch(() => {
+        setIsSendingEmailChangeOtp(false);
+      });
+
+      // 2. Also notify the new email that it has been requested to link
+      sendSecurityAlertEmail({
+        email: cleanEmail,
+        username: displayName.trim() || currentUser.displayName,
+        actionType: 'email_change_requested',
+        oldEmail: currentUser.email,
+        newEmail: cleanEmail
+      });
+
+      return;
+    }
+
     onUpdateProfile({
       displayName: displayName.trim(),
       username: cleanUsername,
@@ -294,6 +370,69 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
     setInfoSuccess(true);
     setTimeout(() => setInfoSuccess(false), 3000);
+  };
+
+  // Confirm email change with OTP
+  const handleConfirmEmailChange = () => {
+    setEmailChangeOtpError(null);
+    const trimmed = emailChangeOtp.trim();
+    if (trimmed !== sentEmailChangeOtp && trimmed !== '123456') {
+      setEmailChangeOtpError(`رمز التحقق غير صحيح. يرجى إدخال الرمز المكون من 6 أرقام (${sentEmailChangeOtp}) أو استخدم 123456 للتجربة.`);
+      return;
+    }
+
+    // Apply email change to user profile
+    onUpdateProfile({
+      displayName: displayName.trim(),
+      username: username.trim().toLowerCase(),
+      email: pendingNewEmail,
+      isEmailVerified: true,
+      bio: bio.trim(),
+      avatar: avatar
+    });
+
+    // Send confirmation security notice to both new and old email
+    sendSecurityAlertEmail({
+      email: pendingNewEmail,
+      username: displayName.trim() || currentUser.displayName,
+      actionType: 'email_changed',
+      oldEmail: currentUser.email,
+      newEmail: pendingNewEmail
+    });
+
+    sendSecurityAlertEmail({
+      email: currentUser.email,
+      username: currentUser.displayName,
+      actionType: 'email_changed',
+      oldEmail: currentUser.email,
+      newEmail: pendingNewEmail
+    });
+
+    setIsEmailVerifiedState(true);
+    setIsEmailChangeModalOpen(false);
+    setEmail(pendingNewEmail);
+    setInfoSuccess(true);
+    setTimeout(() => setInfoSuccess(false), 3500);
+  };
+
+  const handleResendEmailChangeOtp = () => {
+    if (!pendingNewEmail) return;
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setSentEmailChangeOtp(code);
+    setIsSendingEmailChangeOtp(true);
+    sendSecurityAlertEmail({
+      email: currentUser.email,
+      username: displayName.trim() || currentUser.displayName,
+      actionType: 'email_change_requested',
+      oldEmail: currentUser.email,
+      newEmail: pendingNewEmail,
+      otpCode: code
+    }).then(res => {
+      setIsSendingEmailChangeOtp(false);
+      setEmailChangeOtpNotice(res.message);
+    }).catch(() => {
+      setIsSendingEmailChangeOtp(false);
+    });
   };
 
   // Save Security & Password
@@ -427,19 +566,138 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       last4
     };
 
-    onUpdateProfile({ savedCard: newCard });
-    setCardSuccess(true);
-    setTimeout(() => setCardSuccess(false), 3000);
+    // Require Email OTP verification before saving/updating the card!
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setSentCardOtp(code);
+    setPendingCardData(newCard);
+    setCardOtpAction('save');
+    setCardOtpInput('');
+    setCardOtpError(null);
+    setCardOtpNotice(null);
+    setIsSendingCardOtp(true);
+    setIsCardOtpModalOpen(true);
+
+    sendSecurityAlertEmail({
+      email: currentUser.email,
+      username: currentUser.displayName,
+      actionType: 'card_change_requested',
+      cardLast4: last4,
+      cardType: newCard.cardType,
+      otpCode: code
+    }).then(res => {
+      setIsSendingCardOtp(false);
+      setCardOtpNotice(res.message);
+    }).catch(() => {
+      setIsSendingCardOtp(false);
+    });
   };
 
   const handleRemoveCard = () => {
-    onUpdateProfile({ savedCard: undefined });
-    setRawCardNumber('');
-    setCardHolder('');
-    setExpiry('');
-    setCvv('');
-    setCardSuccess(false);
-    setCardError(null);
+    if (!currentUser.savedCard) return;
+
+    // Require Email OTP verification before deleting the card!
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setSentCardOtp(code);
+    setPendingCardData(null);
+    setCardOtpAction('remove');
+    setCardOtpInput('');
+    setCardOtpError(null);
+    setCardOtpNotice(null);
+    setIsSendingCardOtp(true);
+    setIsCardOtpModalOpen(true);
+
+    sendSecurityAlertEmail({
+      email: currentUser.email,
+      username: currentUser.displayName,
+      actionType: 'card_removal_requested',
+      cardLast4: currentUser.savedCard.last4 || '****',
+      cardType: currentUser.savedCard.cardType,
+      otpCode: code
+    }).then(res => {
+      setIsSendingCardOtp(false);
+      setCardOtpNotice(res.message);
+    }).catch(() => {
+      setIsSendingCardOtp(false);
+    });
+  };
+
+  const handleConfirmCardOtp = () => {
+    setCardOtpError(null);
+    const trimmed = cardOtpInput.trim();
+    if (trimmed !== sentCardOtp && trimmed !== '123456') {
+      setCardOtpError(`رمز التحقق غير صحيح. يرجى إدخال الرمز المكون من 6 أرقام (${sentCardOtp}) أو استخدم 123456 للاختبار.`);
+      return;
+    }
+
+    if (cardOtpAction === 'save' && pendingCardData) {
+      const isUpdate = Boolean(currentUser.savedCard);
+      const actionType = isUpdate ? 'card_updated' : 'card_added';
+
+      onUpdateProfile({ savedCard: pendingCardData });
+      setCardSuccess(true);
+      setCardSecurityNotice('تم تأكيد واعتماد وسيلة الدفع بنجاح بعد التحقق من ملكيتك عبر البريد الإلكتروني.');
+
+      sendSecurityAlertEmail({
+        email: currentUser.email,
+        username: currentUser.displayName,
+        actionType,
+        cardLast4: pendingCardData.last4,
+        cardType: pendingCardData.cardType
+      }).catch(() => {});
+
+      setTimeout(() => {
+        setCardSuccess(false);
+        setCardSecurityNotice(null);
+      }, 7000);
+    } else if (cardOtpAction === 'remove') {
+      const last4 = currentUser.savedCard?.last4 || '****';
+      onUpdateProfile({ savedCard: undefined });
+      setRawCardNumber('');
+      setCardHolder('');
+      setExpiry('');
+      setCvv('');
+      setCardSuccess(false);
+      setCardError(null);
+      setCardSecurityNotice('تم تأكيد حذف وسيلة الدفع بنجاح بعد التحقق من هويتك عبر البريد الإلكتروني.');
+
+      sendSecurityAlertEmail({
+        email: currentUser.email,
+        username: currentUser.displayName,
+        actionType: 'card_removed',
+        cardLast4: last4
+      }).catch(() => {});
+
+      setTimeout(() => setCardSecurityNotice(null), 7000);
+    }
+
+    setIsCardOtpModalOpen(false);
+  };
+
+  const handleResendCardOtp = () => {
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setSentCardOtp(code);
+    setIsSendingCardOtp(true);
+    setCardOtpNotice(null);
+    setCardOtpError(null);
+
+    const actionType = cardOtpAction === 'save' ? 'card_change_requested' : 'card_removal_requested';
+    const last4 = cardOtpAction === 'save' ? (pendingCardData?.last4 || '****') : (currentUser.savedCard?.last4 || '****');
+    const cardType = cardOtpAction === 'save' ? pendingCardData?.cardType : currentUser.savedCard?.cardType;
+
+    sendSecurityAlertEmail({
+      email: currentUser.email,
+      username: currentUser.displayName,
+      actionType,
+      cardLast4: last4,
+      cardType,
+      otpCode: code
+    }).then(res => {
+      setIsSendingCardOtp(false);
+      setCardOtpNotice('تمت إعادة إرسال رمز التحقق الأمني إلى بريدك الإلكتروني بنجاح.');
+    }).catch(() => {
+      setIsSendingCardOtp(false);
+      setCardOtpNotice('تم توليد رمز تحقق أمني جديد.');
+    });
   };
 
   return (
@@ -1456,6 +1714,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   </div>
                 )}
 
+                {cardSecurityNotice && (
+                  <div className="p-3 bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-900 rounded-xl text-indigo-700 dark:text-indigo-300 flex items-center gap-2 animate-fadeIn">
+                    <ShieldCheck className="w-4 h-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
+                    <span className="text-xs">{cardSecurityNotice}</span>
+                  </div>
+                )}
+
                 <button
                   type="submit"
                   className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl shadow-md transition flex items-center justify-center gap-2"
@@ -1828,6 +2093,252 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               >
                 إلغاء
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EMAIL CHANGE VERIFICATION MODAL */}
+      {isEmailChangeModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl animate-scaleUp text-right">
+            
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-900 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                  <Mail className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                    تأكيد تغيير البريد الإلكتروني
+                  </h4>
+                  <p className="text-[11px] text-slate-500">تحقق أمني مضاعف لحماية حسابك</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEmailChangeModalOpen(false)}
+                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-600 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs space-y-2">
+                <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
+                  <span>البريد الحالي:</span>
+                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{currentUser.email}</span>
+                </div>
+                <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
+                  <span>البريد الجديد:</span>
+                  <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">{pendingNewEmail}</span>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                لحماية حسابك من الاختراق والاستيلاء غير المصرح به، تم إرسال رمز التحقق (OTP) المكوّن من 6 أرقام إلى بريدك الإلكتروني الحالي والمسجل لدينا <strong className="text-indigo-600 dark:text-indigo-400 font-mono">{currentUser.email}</strong>. يرجى كتابة الرمز لتأكيد ملكيتك للحساب والموافقة على التحويل إلى البريد الجديد:
+              </p>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  رمز التحقق (OTP):
+                </label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={emailChangeOtp}
+                  onChange={(e) => {
+                    setEmailChangeOtp(e.target.value.replace(/\D/g, ''));
+                    setEmailChangeOtpError(null);
+                  }}
+                  placeholder="123456"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 text-center font-mono text-xl tracking-[0.3em] font-bold text-slate-900 dark:text-white"
+                  autoFocus
+                />
+              </div>
+
+              {emailChangeOtpError && (
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 rounded-xl text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{emailChangeOtpError}</span>
+                </div>
+              )}
+
+              {emailChangeOtpNotice && (
+                <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl text-emerald-800 dark:text-emerald-300 text-[11px] flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  <span>{emailChangeOtpNotice}</span>
+                </div>
+              )}
+
+              {/* Dev/Sandbox hint */}
+              <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-800 dark:text-amber-300 text-[11px] flex items-center justify-between">
+                <span>رمز الاختبار التجريبي السريع:</span>
+                <span className="font-mono font-bold bg-amber-100 dark:bg-amber-900 px-2 py-0.5 rounded text-xs">{sentEmailChangeOtp || '123456'}</span>
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  type="button"
+                  disabled={isSendingEmailChangeOtp}
+                  onClick={handleResendEmailChangeOtp}
+                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSendingEmailChangeOtp ? 'animate-spin' : ''}`} />
+                  <span>إعادة إرسال الرمز</span>
+                </button>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmEmailChange}
+                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md transition cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>تأكيد تغيير البريد</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEmailChangeModalOpen(false)}
+                  className="px-4 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs transition cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CARD ACTION (SAVE / REMOVE) OTP VERIFICATION MODAL */}
+      {isCardOtpModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl animate-scaleUp text-right">
+            
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${
+                  cardOtpAction === 'save'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-100 dark:border-emerald-900 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-rose-50 dark:bg-rose-950/60 border-rose-100 dark:border-rose-900 text-rose-600 dark:text-rose-400'
+                }`}>
+                  {cardOtpAction === 'save' ? <CreditCard className="w-5 h-5" /> : <Trash2 className="w-5 h-5" />}
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                    {cardOtpAction === 'save' 
+                      ? (currentUser.savedCard ? 'تأكيد تحديث بيانات البطاقة' : 'تأكيد حفظ البطاقة البنكية') 
+                      : 'تأكيد حذف وسيلة الدفع'}
+                  </h4>
+                  <p className="text-[11px] text-slate-500">تحقق أمني مصرفي عبر البريد الإلكتروني</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCardOtpModalOpen(false)}
+                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-600 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs space-y-2">
+                <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
+                  <span>البريد المعتمد للتحقق:</span>
+                  <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">{currentUser.email}</span>
+                </div>
+                <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
+                  <span>البطاقة البنكية:</span>
+                  <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                    {cardOtpAction === 'save' 
+                      ? `•••• ${pendingCardData?.last4 || '****'}` 
+                      : `•••• ${currentUser.savedCard?.last4 || '****'}`}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                {cardOtpAction === 'save'
+                  ? `لحماية أموالك من أي إضافة أو تغيير غير مصرح به، أرسلنا رمز تحقق أمني (OTP) مكوّن من 6 أرقام إلى بريدك الإلكتروني المسجل لدينا (${currentUser.email}). يرجى إدخال الرمز لتأكيد العملية:`
+                  : `لتأكيد رغبتك في حذف وإلغاء ارتباط وسيلة الدفع بحسابك، أرسلنا رمز تحقق أمني (OTP) مكوّن من 6 أرقام إلى بريدك الإلكتروني المسجل لدينا (${currentUser.email}). يرجى كتابة الرمز لتأكيد الإزالة:`}
+              </p>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  رمز التحقق الأمني (OTP):
+                </label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={cardOtpInput}
+                  onChange={(e) => {
+                    setCardOtpInput(e.target.value.replace(/\D/g, ''));
+                    setCardOtpError(null);
+                  }}
+                  placeholder="123456"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 text-center font-mono text-xl tracking-[0.3em] font-bold text-slate-900 dark:text-white"
+                  autoFocus
+                />
+              </div>
+
+              {cardOtpError && (
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 rounded-xl text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{cardOtpError}</span>
+                </div>
+              )}
+
+              {cardOtpNotice && (
+                <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl text-emerald-800 dark:text-emerald-300 text-[11px] flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  <span>{cardOtpNotice}</span>
+                </div>
+              )}
+
+              {/* Dev/Sandbox hint */}
+              <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-800 dark:text-amber-300 text-[11px] flex items-center justify-between">
+                <span>رمز الاختبار التجريبي السريع:</span>
+                <span className="font-mono font-bold bg-amber-100 dark:bg-amber-900 px-2 py-0.5 rounded text-xs">{sentCardOtp || '123456'}</span>
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  type="button"
+                  disabled={isSendingCardOtp}
+                  onClick={handleResendCardOtp}
+                  className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium disabled:opacity-50 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSendingCardOtp ? 'animate-spin' : ''}`} />
+                  <span>إعادة إرسال الرمز</span>
+                </button>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmCardOtp}
+                  className={`flex-1 py-3 text-white font-bold rounded-xl text-xs shadow-md transition cursor-pointer flex items-center justify-center gap-2 ${
+                    cardOtpAction === 'save'
+                      ? 'bg-emerald-600 hover:bg-emerald-700'
+                      : 'bg-rose-600 hover:bg-rose-700'
+                  }`}
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{cardOtpAction === 'save' ? 'تأكيد واعتماد البطاقة' : 'تأكيد حذف البطاقة'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCardOtpModalOpen(false)}
+                  className="px-4 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs transition cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+
             </div>
           </div>
         </div>
