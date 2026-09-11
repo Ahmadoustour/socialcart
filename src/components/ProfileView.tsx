@@ -182,7 +182,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [emailOtpError, setEmailOtpError] = useState<string | null>(null);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [isEmailVerifiedState, setIsEmailVerifiedState] = useState(Boolean(currentUser.isEmailVerified ?? true));
-  const [sentOtpCode, setSentOtpCode] = useState('123456');
+  const [sentOtpCode, setSentOtpCode] = useState('');
   const [otpServerMsg, setOtpServerMsg] = useState<string | null>(null);
 
   // Card Tab State
@@ -376,8 +376,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const handleConfirmEmailChange = () => {
     setEmailChangeOtpError(null);
     const trimmed = emailChangeOtp.trim();
-    if (trimmed !== sentEmailChangeOtp && trimmed !== '123456') {
-      setEmailChangeOtpError(`رمز التحقق غير صحيح. يرجى إدخال الرمز المكون من 6 أرقام (${sentEmailChangeOtp}) أو استخدم 123456 للتجربة.`);
+    if (!sentEmailChangeOtp || trimmed !== sentEmailChangeOtp) {
+      setEmailChangeOtpError('رمز التحقق غير صحيح أو منتهي الصلاحية. يرجى إدخال الرمز المكون من 6 أرقام المرسل إلى بريدك الإلكتروني.');
       return;
     }
 
@@ -508,8 +508,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   const handleVerifyEmailOtp = () => {
     const trimmed = emailOtp.trim();
-    if (trimmed !== sentOtpCode && trimmed !== '123456') {
-      setEmailOtpError(`رمز التحقق غير صحيح. يرجى إدخال الرمز المكون من 6 أرقام (${sentOtpCode}) أو اكتب 123456.`);
+    if (!sentOtpCode || trimmed !== sentOtpCode) {
+      setEmailOtpError('رمز التحقق غير صحيح أو منتهي الصلاحية. يرجى كتابة الرمز المكون من 6 أرقام المرسل إلى بريدك الإلكتروني.');
       return;
     }
     setIsEmailVerifiedState(true);
@@ -624,8 +624,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const handleConfirmCardOtp = () => {
     setCardOtpError(null);
     const trimmed = cardOtpInput.trim();
-    if (trimmed !== sentCardOtp && trimmed !== '123456') {
-      setCardOtpError(`رمز التحقق غير صحيح. يرجى إدخال الرمز المكون من 6 أرقام (${sentCardOtp}) أو استخدم 123456 للاختبار.`);
+    if (!sentCardOtp || trimmed !== sentCardOtp) {
+      setCardOtpError('رمز التحقق غير صحيح أو منتهي الصلاحية. يرجى إدخال الرمز المكون من 6 أرقام المرسل إلى بريدك الإلكتروني.');
       return;
     }
 
@@ -1496,12 +1496,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     type="text"
                     maxLength={6}
                     value={emailOtp}
-                    onChange={(e) => setEmailOtp(e.target.value)}
-                    placeholder="مثال: 123456"
+                    onChange={(e) => setEmailOtp(e.target.value.replace(/\D/g, ''))}
+                    placeholder="أدخل الرمز (6 أرقام)"
                     className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-center text-lg font-mono font-bold tracking-widest outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                   <span className="text-[10px] text-slate-400 block text-center">
-                    (في بيئة الاختبار يمكنك كتابة: 123456)
+                    يرجى إدخال الرمز المكون من 6 أرقام المرسل إلى بريدك الإلكتروني
                   </span>
                 </div>
 
@@ -2152,7 +2152,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     setEmailChangeOtp(e.target.value.replace(/\D/g, ''));
                     setEmailChangeOtpError(null);
                   }}
-                  placeholder="123456"
+                  placeholder="أدخل الرمز (6 أرقام)"
                   className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 text-center font-mono text-xl tracking-[0.3em] font-bold text-slate-900 dark:text-white"
                   autoFocus
                 />
@@ -2171,12 +2171,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <span>{emailChangeOtpNotice}</span>
                 </div>
               )}
-
-              {/* Dev/Sandbox hint */}
-              <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-800 dark:text-amber-300 text-[11px] flex items-center justify-between">
-                <span>رمز الاختبار التجريبي السريع:</span>
-                <span className="font-mono font-bold bg-amber-100 dark:bg-amber-900 px-2 py-0.5 rounded text-xs">{sentEmailChangeOtp || '123456'}</span>
-              </div>
 
               <div className="flex items-center justify-between pt-2">
                 <button
@@ -2279,7 +2273,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     setCardOtpInput(e.target.value.replace(/\D/g, ''));
                     setCardOtpError(null);
                   }}
-                  placeholder="123456"
+                  placeholder="أدخل الرمز (6 أرقام)"
                   className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 text-center font-mono text-xl tracking-[0.3em] font-bold text-slate-900 dark:text-white"
                   autoFocus
                 />
@@ -2298,12 +2292,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <span>{cardOtpNotice}</span>
                 </div>
               )}
-
-              {/* Dev/Sandbox hint */}
-              <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-800 dark:text-amber-300 text-[11px] flex items-center justify-between">
-                <span>رمز الاختبار التجريبي السريع:</span>
-                <span className="font-mono font-bold bg-amber-100 dark:bg-amber-900 px-2 py-0.5 rounded text-xs">{sentCardOtp || '123456'}</span>
-              </div>
 
               <div className="flex items-center justify-between pt-2">
                 <button
