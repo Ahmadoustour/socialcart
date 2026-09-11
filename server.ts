@@ -15,10 +15,37 @@ const PORT = 3000;
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// Persistent File-Based Storage for Posts & Products
-const DATA_DIR = path.join(process.cwd(), "data");
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+// Enable CORS for Vercel Serverless deployments and preview environments
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+  next();
+});
+
+// Normalize request URLs for Vercel serverless functions (handling rewrites and stripped prefixes)
+app.use((req, res, next) => {
+  if (req.query && req.query.path) {
+    const rawPath = Array.isArray(req.query.path) ? req.query.path.join("/") : String(req.query.path);
+    req.url = `/api/${rawPath.replace(/^\/+/, "")}`;
+  } else if (!req.url.startsWith("/api") && !req.url.startsWith("/assets") && req.url !== "/" && req.url !== "") {
+    req.url = `/api${req.url.startsWith("/") ? "" : "/"}${req.url}`;
+  }
+  next();
+});
+
+// Persistent File-Based Storage with Vercel /tmp fallback
+const isVercel = Boolean(process.env.VERCEL);
+const DATA_DIR = isVercel ? path.join("/tmp", "socialcart_data") : path.join(process.cwd(), "data");
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch (dirErr) {
+  console.warn("Notice: Persistent data directory initialization bypassed:", dirErr);
 }
 
 const POSTS_FILE = path.join(DATA_DIR, "posts.json");
@@ -39,10 +66,14 @@ function readJsonFile<T>(filePath: string, defaultValue: T): T {
 
 function writeJsonFile<T>(filePath: string, data: T): boolean {
   try {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
     return true;
   } catch (err) {
-    console.error(`Error writing ${filePath}:`, err);
+    console.warn(`Warning writing ${filePath}:`, err);
     return false;
   }
 }
@@ -85,6 +116,8 @@ function getGmailTransporter(): Transporter | null {
 // 60-Second Cooldown Tracking for Verification Messages
 const lastOtpSentTimes = new Map<string, number>();
 
+let lastGmailError: string | null = null;
+
 // Unified Email Delivery Engine (Prioritizes Gmail SMTP for sending to any email globally)
 async function sendSystemEmail({
   to,
@@ -102,11 +135,12 @@ async function sendSystemEmail({
   if (transporter && gmailUser) {
     try {
       const info = await transporter.sendMail({
-        from: `"SocialCart Security" <${gmailUser}>`,
+        from: `"سوشيال كارت SocialCart" <${gmailUser}>`,
         to,
         subject,
         html
       });
+      lastGmailError = null;
       console.log(`✅ [Gmail SMTP Success] MessageId: ${info.messageId} to ${to}`);
       return {
         success: true,
@@ -115,6 +149,7 @@ async function sendSystemEmail({
         message: `تم إرسال البريد الإلكتروني بنجاح عبر Gmail إلى (${to}).`
       };
     } catch (gmailErr: any) {
+      lastGmailError = gmailErr.message;
       console.warn("⚠️ [Gmail SMTP Warning]:", gmailErr.message);
     }
   }
@@ -155,6 +190,23 @@ async function sendSystemEmail({
     }
   }
 
+  // If Gmail attempted but failed, return the exact diagnostic message
+  if (lastGmailError) {
+    return {
+      success: false,
+      deliveryStatus: "gmail_error",
+      message: `فشل إرسال البريد عبر Gmail SMTP: ${lastGmailError}. يرجى التحقق من صحة كلمة مرور التطبيقات في إعدادات البيئة على Vercel.`
+    };
+  }
+
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+    return {
+      success: false,
+      deliveryStatus: "key_missing",
+      message: `إعدادات GMAIL_USER أو GMAIL_APP_PASSWORD غير متوفرة في بيئة Vercel. يرجى إضافتها في Project Settings وعمل Redeploy.`
+    };
+  }
+
   return {
     success: false,
     deliveryStatus: "key_missing",
@@ -163,16 +215,56 @@ async function sendSystemEmail({
 }
 
 // 1. System Health & Integration Status API
-app.get("/api/health", (req, res) => {
+app.get(["/api/health", "/health"], (req, res) => {
   res.json({
     status: "ok",
     timestamp: new Date().toISOString(),
+    isVercel: Boolean(process.env.VERCEL),
     integrations: {
       stripe: Boolean(process.env.STRIPE_SECRET_KEY),
       gmail: Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD),
       resend: Boolean(process.env.RESEND_API_KEY),
       virustotal: Boolean(process.env.VIRUSTOTAL_API_KEY),
       firebase: Boolean(process.env.VITE_FIREBASE_PROJECT_ID)
+    }
+  });
+});
+
+// Dedicated Email Diagnostic & Health API
+app.get(["/api/email/health", "/email/health"], async (req, res) => {
+  const user = process.env.GMAIL_USER?.trim();
+  const rawPass = process.env.GMAIL_APP_PASSWORD?.trim();
+  const hasUser = Boolean(user);
+  const hasPass = Boolean(rawPass);
+  const transporter = getGmailTransporter();
+
+  let smtpVerified = false;
+  let smtpVerificationError: string | null = null;
+
+  if (transporter) {
+    try {
+      await transporter.verify();
+      smtpVerified = true;
+    } catch (err: any) {
+      smtpVerificationError = err?.message || String(err);
+    }
+  }
+
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    isVercel: Boolean(process.env.VERCEL),
+    gmail: {
+      configured: hasUser && hasPass,
+      userConfigured: hasUser,
+      user: user ? user.replace(/(.{2})(.*)(@.*)/, "$1***$3") : null,
+      passwordConfigured: hasPass,
+      smtpVerified,
+      smtpVerificationError,
+      lastGmailError
+    },
+    resend: {
+      configured: Boolean(process.env.RESEND_API_KEY)
     }
   });
 });
@@ -269,7 +361,7 @@ app.post("/api/payment/verify-and-charge", async (req, res) => {
 });
 
 // 4. Live Email Verification OTP
-app.post("/api/email/send-otp", async (req, res) => {
+app.post(["/api/email/send-otp", "/email/send-otp"], async (req, res) => {
   try {
     const { email, otpCode, username } = req.body;
 
@@ -328,7 +420,7 @@ app.post("/api/email/send-otp", async (req, res) => {
 });
 
 // 4.1. Sensitive Security Alert Email API (Card changes, deletions, email changes)
-app.post("/api/email/security-alert", async (req, res) => {
+app.post(["/api/email/security-alert", "/email/security-alert"], async (req, res) => {
   try {
     const { 
       email, 

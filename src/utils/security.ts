@@ -326,6 +326,14 @@ export async function sendSecurityAlertEmail(params: {
 
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
+      if (data.success === false) {
+        return {
+          success: false,
+          message: data.message || 'تعذر إرسال الإشعار الأمني إلى البريد الإلكتروني.',
+          deliveryStatus: data.deliveryStatus || 'error',
+          otpCode: params.otpCode
+        };
+      }
       return {
         success: true,
         message: data.message || 'تم إرسال الإشعار الأمني بنجاح.',
@@ -335,7 +343,7 @@ export async function sendSecurityAlertEmail(params: {
     } else {
       return {
         success: false,
-        message: data.message || data.error || 'تعذر إرسال الإشعار الأمني إلى البريد الإلكتروني.',
+        message: data.message || data.error || `تعذر إرسال الإشعار الأمني (رمز الاستجابة: ${res.status}). يرجى التحقق من إعدادات Vercel.`,
         deliveryStatus: data.cooldown ? 'cooldown' : 'error',
         otpCode: params.otpCode
       };

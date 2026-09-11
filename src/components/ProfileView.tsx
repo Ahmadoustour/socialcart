@@ -242,6 +242,29 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     return () => clearInterval(timer);
   }, [emailVerifyOtpCooldown]);
 
+  // Email Server Diagnostics State
+  const [emailHealthStatus, setEmailHealthStatus] = useState<any>(null);
+  const [isCheckingEmailHealth, setIsCheckingEmailHealth] = useState(false);
+
+  const checkEmailHealth = async () => {
+    setIsCheckingEmailHealth(true);
+    try {
+      const res = await fetch('/api/email/health');
+      const data = await res.json();
+      setEmailHealthStatus(data);
+    } catch (err: any) {
+      setEmailHealthStatus({ error: err?.message || 'تعذر الاتصال بالخادم' });
+    } finally {
+      setIsCheckingEmailHealth(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'security' && !emailHealthStatus && !isCheckingEmailHealth) {
+      checkEmailHealth();
+    }
+  }, [activeTab]);
+
   // Handle File Upload from device
   const processImageFile = (file: File) => {
     setAvatarUploadError(null);
@@ -1651,6 +1674,77 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
             </div>
           )}
+
+          {/* Section 3: Cloud Mailer Diagnostics & Integration Status */}
+          <div className="pt-6 border-t border-slate-100 dark:border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                  <span>حالة خادم البريد وتنبيهات الأمان السحابية</span>
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  فحص اتصال Gmail SMTP وإشعارات التحقق الأمنية
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={checkEmailHealth}
+                disabled={isCheckingEmailHealth}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isCheckingEmailHealth ? 'animate-spin' : ''}`} />
+                <span>{isCheckingEmailHealth ? 'جاري الفحص...' : 'فحص الاتصال'}</span>
+              </button>
+            </div>
+
+            {emailHealthStatus && (
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl space-y-2 text-xs">
+                {emailHealthStatus.error ? (
+                  <div className="text-red-500 flex items-center gap-1.5 font-bold">
+                    <span>⚠️ تعذر الاتصال بـ API: {emailHealthStatus.error}</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600 dark:text-slate-400">حساب Gmail SMTP:</span>
+                      {emailHealthStatus.gmail?.configured ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>مهيأ ({emailHealthStatus.gmail.user || 'Gmail'})</span>
+                        </span>
+                      ) : (
+                        <span className="text-amber-500 font-bold">غير مهيأ (أضف المتغيرات في Vercel وعمل Redeploy)</span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600 dark:text-slate-400">فحص مصادقة جوجل (Google SMTP):</span>
+                      {emailHealthStatus.gmail?.smtpVerified ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>ناجح وموثق بنسبة 100%</span>
+                        </span>
+                      ) : emailHealthStatus.gmail?.smtpVerificationError ? (
+                        <span className="text-red-500 font-bold">
+                          فشل: {emailHealthStatus.gmail.smtpVerificationError}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 font-mono">قيد الانتظار أو غير متوفر</span>
+                      )}
+                    </div>
+
+                    {emailHealthStatus.gmail?.lastGmailError && (
+                      <div className="p-2 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-xl text-red-600 dark:text-red-400 text-[11px]">
+                        ⚠️ آخر استجابة من جوجل: {emailHealthStatus.gmail.lastGmailError}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
