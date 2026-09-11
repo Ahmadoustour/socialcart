@@ -32,9 +32,12 @@ export const AccountMenuModal: React.FC<AccountMenuModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center sm:items-start justify-center sm:justify-end p-4 sm:p-6 bg-black/60 backdrop-blur-sm animate-fadeIn">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm animate-fadeIn overflow-y-auto"
+      onClick={onClose}
+    >
       <div 
-        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-sm p-5 shadow-2xl relative sm:mt-14"
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-sm p-5 shadow-2xl relative my-auto mx-auto"
         onClick={e => e.stopPropagation()}
       >
         {/* Close Button */}

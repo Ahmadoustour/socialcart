@@ -1702,8 +1702,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
           {/* Email OTP Verification Modal */}
           {showEmailVerifyModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-sm w-full p-6 text-slate-900 dark:text-slate-100 space-y-4 shadow-2xl">
+            <div 
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-xs animate-fadeIn overflow-y-auto"
+              onClick={() => setShowEmailVerifyModal(false)}
+            >
+              <div 
+                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-sm w-full p-6 text-slate-900 dark:text-slate-100 space-y-4 shadow-2xl my-auto mx-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
@@ -2098,9 +2104,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
       {/* AVATAR EDIT MODAL */}
       {isAvatarModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-sm animate-fadeIn overflow-y-auto"
+          onClick={() => {
+            setIsAvatarModalOpen(false);
+            setAvatarUploadError(null);
+          }}
+        >
           <div 
-            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg p-5 sm:p-6 shadow-2xl relative space-y-5 animate-scaleUp overflow-hidden max-h-[90vh] flex flex-col"
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg p-5 sm:p-6 shadow-2xl relative space-y-5 animate-scaleUp overflow-hidden max-h-[90vh] flex flex-col my-auto mx-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -2379,8 +2391,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
       {/* DELETE CONFIRMATION MODAL FOR POSTS & PRODUCTS */}
       {deleteConfirmTarget && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-sm w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl text-center animate-scaleUp">
+        <div 
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+          onClick={() => setDeleteConfirmTarget(null)}
+        >
+          <div 
+            className="bg-white dark:bg-slate-900 rounded-3xl max-w-sm w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl text-center animate-scaleUp my-auto mx-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-100 dark:border-rose-900 flex items-center justify-center text-rose-600 dark:text-rose-400">
               <Trash2 className="w-7 h-7" />
             </div>
@@ -2419,8 +2437,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
       {/* EMAIL CHANGE VERIFICATION MODAL */}
       {isEmailChangeModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl animate-scaleUp text-right">
+        <div 
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+          onClick={() => setIsEmailChangeModalOpen(false)}
+        >
+          <div 
+            className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl animate-scaleUp text-right my-auto mx-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
@@ -2545,8 +2569,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
       {/* CARD ACTION (SAVE / REMOVE) OTP VERIFICATION MODAL */}
       {isCardOtpModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl animate-scaleUp text-right">
+        <div 
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+          onClick={() => setIsCardOtpModalOpen(false)}
+        >
+          <div 
+            className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl animate-scaleUp text-right my-auto mx-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2.5">
