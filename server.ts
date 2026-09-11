@@ -95,6 +95,7 @@ try {
 const POSTS_FILE = path.join(DATA_DIR, "posts.json");
 const PRODUCTS_FILE = path.join(DATA_DIR, "products.json");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
+const ORDERS_FILE = path.join(DATA_DIR, "orders.json");
 
 function readJsonFile<T>(filePath: string, defaultValue: T): T {
   try {
@@ -1030,6 +1031,49 @@ app.post("/api/users", (req, res) => {
     }
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Failed to persist user" });
+  }
+});
+
+// 9. Orders Persistence APIs
+app.get(["/api/orders", "/orders"], (req, res) => {
+  const { userId, buyerId } = req.query;
+  const orders = readJsonFile<any[]>(ORDERS_FILE, []);
+  const targetUser = (userId || buyerId) as string | undefined;
+  if (targetUser) {
+    const clean = targetUser.toLowerCase();
+    const filtered = orders.filter(o => 
+      (o.buyerId && o.buyerId.toLowerCase() === clean) ||
+      (o.buyerEmail && o.buyerEmail.toLowerCase() === clean) ||
+      (o.buyerUsername && o.buyerUsername.toLowerCase() === clean)
+    );
+    return res.json(filtered);
+  }
+  res.json(orders);
+});
+
+app.post(["/api/orders", "/orders"], (req, res) => {
+  try {
+    const payload = req.body;
+    if (!payload) {
+      return res.status(400).json({ error: "Invalid order data" });
+    }
+    const orders = readJsonFile<any[]>(ORDERS_FILE, []);
+    const incomingOrders = Array.isArray(payload) ? payload : [payload];
+    
+    incomingOrders.forEach(newOrder => {
+      if (!newOrder || !newOrder.id) return;
+      const idx = orders.findIndex(o => o.id === newOrder.id);
+      if (idx >= 0) {
+        orders[idx] = { ...orders[idx], ...newOrder };
+      } else {
+        orders.unshift(newOrder);
+      }
+    });
+
+    writeJsonFile(ORDERS_FILE, orders);
+    res.json({ success: true, count: orders.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to persist orders" });
   }
 });
 

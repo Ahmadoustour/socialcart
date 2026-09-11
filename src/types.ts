@@ -113,6 +113,9 @@ export interface Order {
   category: string;
   sellerUsername: string;
   sellerDisplayName: string;
+  buyerId?: string;
+  buyerUsername?: string;
+  buyerEmail?: string;
   unitPrice: number;
   quantity: number;
   totalPaid: number;
@@ -137,6 +140,7 @@ export interface Message {
 
 export interface Conversation {
   id: string;
+  userId?: string;
   participantId: string;
   participantUsername: string;
   participantDisplayName: string;

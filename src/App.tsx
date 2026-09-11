@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Lock } from 'lucide-react';
 import { Header } from './components/Header';
 import { SocialFeed } from './components/SocialFeed';
@@ -46,6 +46,104 @@ const GUEST_USER: User = {
   isEmailVerified: false,
   twoFactorEnabled: false
 };
+
+// Safe per-user local storage key generator
+const getUserStorageKey = (prefix: string, userId: string) => {
+  const safeId = userId ? userId.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_') : 'guest';
+  return `${prefix}_${safeId}`;
+};
+
+function loadUserCart(userId: string): CartItem[] {
+  const userKey = getUserStorageKey('socialcart_cart', userId);
+  const saved = localStorage.getItem(userKey);
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed.filter(c => c && c.product && c.product.id);
+    } catch {}
+  }
+  // Migration fallback: if user cart is empty and user is logged in, check legacy global cart
+  if (userId && userId !== 'guest') {
+    const legacy = localStorage.getItem('socialcart_cart');
+    if (legacy) {
+      try {
+        const parsed = JSON.parse(legacy);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          localStorage.setItem(userKey, legacy);
+          return parsed.filter(c => c && c.product && c.product.id);
+        }
+      } catch {}
+    }
+  }
+  return [];
+}
+
+function loadUserOrders(userId: string, userEmail?: string): Order[] {
+  const userKey = getUserStorageKey('socialcart_orders', userId);
+  const saved = localStorage.getItem(userKey);
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed.filter(o => o && o.id);
+    } catch {}
+  }
+  // Migration fallback: check legacy global orders pool
+  const legacy = localStorage.getItem('socialcart_orders');
+  if (legacy) {
+    try {
+      const parsed = JSON.parse(legacy);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const filtered = parsed.filter(o => 
+          o && o.id && (
+            !o.buyerId || 
+            o.buyerId === userId || 
+            (userEmail && o.buyerEmail?.toLowerCase() === userEmail.toLowerCase())
+          )
+        );
+        if (filtered.length > 0) {
+          localStorage.setItem(userKey, JSON.stringify(filtered));
+          return filtered;
+        }
+      }
+    } catch {}
+  }
+  return [];
+}
+
+function loadUserConversations(userId: string): Conversation[] {
+  const userKey = getUserStorageKey('socialcart_conversations', userId);
+  const saved = localStorage.getItem(userKey);
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed.filter(c => c && c.id);
+    } catch {}
+  }
+  // Migration fallback from global conversations
+  const legacy = localStorage.getItem('socialcart_conversations');
+  if (legacy) {
+    try {
+      const parsed = JSON.parse(legacy);
+      if (Array.isArray(parsed)) {
+        localStorage.setItem(userKey, legacy);
+        return parsed.filter(c => c && c.id);
+      }
+    } catch {}
+  }
+  return [];
+}
+
+function loadUserNotifications(userId: string): NotificationItem[] {
+  const userKey = getUserStorageKey('socialcart_notifications', userId);
+  const saved = localStorage.getItem(userKey);
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed.filter(n => n && n.id);
+    } catch {}
+  }
+  return [];
+}
 
 export default function App() {
   // Navigation & Modes
@@ -122,59 +220,80 @@ export default function App() {
   });
 
   const [orders, setOrders] = useState<Order[]>(() => {
-    const saved = localStorage.getItem('socialcart_orders');
-    if (!saved) return [];
-    try {
-      const parsed: Order[] = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed.filter(o => o && o.id) : [];
-    } catch {
-      return [];
-    }
+    return loadUserOrders(currentUser.id, currentUser.email);
   });
 
   const [cartItems, setCartItems] = useState<CartItem[]>(() => {
-    const saved = localStorage.getItem('socialcart_cart');
-    if (!saved) return [];
-    try {
-      const parsed: CartItem[] = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed.filter(c => c && c.product && c.product.id) : [];
-    } catch {
-      return [];
-    }
+    return loadUserCart(currentUser.id);
   });
 
   const [conversations, setConversations] = useState<Conversation[]>(() => {
-    const saved = localStorage.getItem('socialcart_conversations');
-    if (!saved) return [];
-    try {
-      const parsed: Conversation[] = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed.filter(c => c && c.id) : [];
-    } catch {
-      return [];
-    }
+    return loadUserConversations(currentUser.id);
   });
 
   const [selectedSocialConvId, setSelectedSocialConvId] = useState<string | null>(null);
   const [selectedMarketConvId, setSelectedMarketConvId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>(() => {
-    const saved = localStorage.getItem('socialcart_notifications');
-    if (!saved) return [];
-    try {
-      const parsed: NotificationItem[] = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed.filter(n => n && n.id) : [];
-    } catch {
-      return [];
-    }
+    return loadUserNotifications(currentUser.id);
   });
 
-  // Save changes to storage
-  useEffect(() => {
-    localStorage.setItem('socialcart_cart', JSON.stringify(cartItems));
-  }, [cartItems]);
+  // Track user switches to smoothly swap cart, orders, and messages
+  const previousUserIdRef = useRef<string>(currentUser.id);
 
   useEffect(() => {
+    const prevId = previousUserIdRef.current;
+    const currentId = currentUser.id;
+
+    if (prevId !== currentId) {
+      // 1. Cart: If logging in from guest with items in guest cart, merge them into user cart!
+      if (prevId === 'guest' && currentId !== 'guest') {
+        const guestCart = loadUserCart('guest');
+        const userCart = loadUserCart(currentId);
+        if (guestCart.length > 0) {
+          const mergedCart = [...userCart];
+          guestCart.forEach(gItem => {
+            const existingIdx = mergedCart.findIndex(i => i.product.id === gItem.product.id);
+            if (existingIdx >= 0) {
+              mergedCart[existingIdx].quantity += gItem.quantity;
+            } else {
+              mergedCart.push(gItem);
+            }
+          });
+          setCartItems(mergedCart);
+          localStorage.setItem(getUserStorageKey('socialcart_cart', currentId), JSON.stringify(mergedCart));
+          localStorage.removeItem(getUserStorageKey('socialcart_cart', 'guest'));
+        } else {
+          setCartItems(userCart);
+        }
+      } else {
+        setCartItems(loadUserCart(currentId));
+      }
+
+      // 2. Orders / Purchases: Load user-specific orders
+      setOrders(loadUserOrders(currentId, currentUser.email));
+
+      // 3. Conversations / Messages: Load user-specific conversations
+      setConversations(loadUserConversations(currentId));
+
+      // 4. Notifications: Load user-specific notifications
+      setNotifications(loadUserNotifications(currentId));
+
+      previousUserIdRef.current = currentId;
+    }
+  }, [currentUser.id, currentUser.email]);
+
+  // Save per-user changes to storage
+  useEffect(() => {
+    const key = getUserStorageKey('socialcart_cart', currentUser.id);
+    localStorage.setItem(key, JSON.stringify(cartItems));
+    localStorage.setItem('socialcart_cart', JSON.stringify(cartItems));
+  }, [cartItems, currentUser.id]);
+
+  useEffect(() => {
+    const key = getUserStorageKey('socialcart_orders', currentUser.id);
+    localStorage.setItem(key, JSON.stringify(orders));
     localStorage.setItem('socialcart_orders', JSON.stringify(orders));
-  }, [orders]);
+  }, [orders, currentUser.id]);
 
   useEffect(() => {
     localStorage.setItem('socialcart_posts', JSON.stringify(posts));
@@ -185,12 +304,15 @@ export default function App() {
   }, [products]);
 
   useEffect(() => {
+    const key = getUserStorageKey('socialcart_conversations', currentUser.id);
+    localStorage.setItem(key, JSON.stringify(conversations));
     localStorage.setItem('socialcart_conversations', JSON.stringify(conversations));
-  }, [conversations]);
+  }, [conversations, currentUser.id]);
 
   useEffect(() => {
-    localStorage.setItem('socialcart_notifications', JSON.stringify(notifications));
-  }, [notifications]);
+    const key = getUserStorageKey('socialcart_notifications', currentUser.id);
+    localStorage.setItem(key, JSON.stringify(notifications));
+  }, [notifications, currentUser.id]);
 
   // Load persistent posts and products from server API
   useEffect(() => {
@@ -230,6 +352,28 @@ export default function App() {
       })
       .catch(err => console.log('Notice: using local products cache:', err));
   }, []);
+
+  // Load persistent orders for current user from server API
+  useEffect(() => {
+    if (currentUser.id && currentUser.id !== 'guest') {
+      fetch(`/api/orders?userId=${encodeURIComponent(currentUser.id)}`)
+        .then(res => res.ok ? res.json() : [])
+        .then((serverOrders: Order[]) => {
+          if (Array.isArray(serverOrders) && serverOrders.length > 0) {
+            setOrders(prev => {
+              const map = new Map<string, Order>();
+              serverOrders.forEach(o => { if (o && o.id) map.set(o.id, o); });
+              prev.forEach(o => { if (o && o.id && !map.has(o.id)) map.set(o.id, o); });
+              const combined = Array.from(map.values());
+              const key = getUserStorageKey('socialcart_orders', currentUser.id);
+              localStorage.setItem(key, JSON.stringify(combined));
+              return combined;
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [currentUser.id]);
 
   // Sync Firebase Auth state & merge with local/server profiles to preserve password, card, bio, etc.
   useEffect(() => {
@@ -753,6 +897,9 @@ export default function App() {
       category: item.product.category,
       sellerUsername: item.product.seller.username,
       sellerDisplayName: item.product.seller.displayName,
+      buyerId: currentUser.id,
+      buyerUsername: currentUser.username,
+      buyerEmail: currentUser.email,
       unitPrice: item.product.price,
       quantity: item.quantity,
       totalPaid: item.product.price * item.quantity, // CRITICAL: Fixes user bug #3
@@ -766,6 +913,13 @@ export default function App() {
 
     // Prepend to orders
     setOrders(prev => [...newOrders, ...prev]);
+
+    // Persist to server
+    fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newOrders)
+    }).catch(err => console.log('Notice: using local storage fallback for orders:', err));
 
     // Remove bought items from cart
     const boughtIds = new Set(ordersData.items.map(i => i.product.id));
@@ -936,6 +1090,7 @@ export default function App() {
     const trimmedMessage = initialMessage?.trim();
     const newConv: Conversation = {
       id: newConvId,
+      userId: currentUser.id,
       participantId: `usr_${cleanUsername}`,
       participantUsername: cleanUsername,
       participantDisplayName,
@@ -1358,7 +1513,11 @@ export default function App() {
         {activeTab === 'purchases' && (
           isLoggedIn ? (
             <PurchasesView
-              orders={orders}
+              orders={orders.filter(o => 
+                !o.buyerId || 
+                o.buyerId === currentUser.id || 
+                (currentUser.email && o.buyerEmail?.toLowerCase() === currentUser.email.toLowerCase())
+              )}
               onDownloadFile={handleDownloadFile}
               onRateSeller={(order) => setReviewOrderTarget(order)}
               onRequestRefund={(order) => {
