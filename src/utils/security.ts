@@ -308,24 +308,47 @@ export async function sendSecurityAlertEmail(params: {
   otpCode?: string;
 }): Promise<{ success: boolean; message: string; deliveryStatus?: string; otpCode?: string }> {
   try {
+    const cleanEmail = (params.email || '').trim();
+    if (!cleanEmail) {
+      return {
+        success: false,
+        message: 'لا يوجد بريد إلكتروني محدد لإرسال الرمز إليه. يرجى كتابة بريدك الإلكتروني في الملف الشخصي أولاً.',
+        deliveryStatus: 'email_missing',
+        otpCode: params.otpCode
+      };
+    }
+
     const res = await fetch('/api/email/security-alert', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params)
+      body: JSON.stringify({ ...params, email: cleanEmail })
     });
+
+    const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      const data = await res.json();
       return {
         success: true,
         message: data.message || 'تم إرسال الإشعار الأمني بنجاح.',
         deliveryStatus: data.deliveryStatus,
         otpCode: data.otpCode
       };
+    } else {
+      return {
+        success: false,
+        message: data.error || 'تعذر إرسال الإشعار الأمني إلى البريد الإلكتروني.',
+        deliveryStatus: 'error',
+        otpCode: params.otpCode
+      };
     }
   } catch (err: any) {
     console.warn('Security alert request failed:', err);
+    return { 
+      success: false, 
+      message: `تعذر الاتصال بخادم إرسال البريد (${err?.message || 'خطأ في الشبكة'}).`,
+      deliveryStatus: 'network_error',
+      otpCode: params.otpCode
+    };
   }
-  return { success: false, message: 'تعذر إرسال الإشعار الأمني إلى البريد الإلكتروني.' };
 }
 
 /**

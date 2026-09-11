@@ -578,6 +578,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       last4
     };
 
+    const effectiveEmail = (currentUser.email || email || '').trim();
+    if (!effectiveEmail) {
+      setCardError('يرجى كتابة وتأكيد بريدك الإلكتروني أولاً في قسم البيانات الشخصية أعلاه قبل ربط أو تعديل وسيلة الدفع لاستلام رموز التحقق.');
+      return;
+    }
+
     // Require Email OTP verification before saving/updating the card!
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setSentCardOtp(code);
@@ -590,8 +596,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setIsCardOtpModalOpen(true);
 
     sendSecurityAlertEmail({
-      email: currentUser.email,
-      username: currentUser.displayName,
+      email: effectiveEmail,
+      username: displayName.trim() || currentUser.displayName,
       actionType: 'card_change_requested',
       cardLast4: last4,
       cardType: newCard.cardType,
@@ -611,6 +617,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const handleRemoveCard = () => {
     if (!currentUser.savedCard) return;
 
+    const effectiveEmail = (currentUser.email || email || '').trim();
+    if (!effectiveEmail) {
+      setCardError('يرجى التأكد من تسجيل بريدك الإلكتروني أولاً في الحساب لاستلام رمز تأكيد الحذف.');
+      return;
+    }
+
     // Require Email OTP verification before deleting the card!
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setSentCardOtp(code);
@@ -623,8 +635,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setIsCardOtpModalOpen(true);
 
     sendSecurityAlertEmail({
-      email: currentUser.email,
-      username: currentUser.displayName,
+      email: effectiveEmail,
+      username: displayName.trim() || currentUser.displayName,
       actionType: 'card_removal_requested',
       cardLast4: currentUser.savedCard.last4 || '****',
       cardType: currentUser.savedCard.cardType,
@@ -657,13 +669,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       setCardSuccess(true);
       setCardSecurityNotice('تم تأكيد واعتماد وسيلة الدفع بنجاح بعد التحقق من ملكيتك عبر البريد الإلكتروني.');
 
-      sendSecurityAlertEmail({
-        email: currentUser.email,
-        username: currentUser.displayName,
-        actionType,
-        cardLast4: pendingCardData.last4,
-        cardType: pendingCardData.cardType
-      }).catch(() => {});
+      const effectiveEmail = (currentUser.email || email || '').trim();
+      if (effectiveEmail) {
+        sendSecurityAlertEmail({
+          email: effectiveEmail,
+          username: displayName.trim() || currentUser.displayName,
+          actionType,
+          cardLast4: pendingCardData.last4,
+          cardType: pendingCardData.cardType
+        }).catch(() => {});
+      }
 
       setTimeout(() => {
         setCardSuccess(false);
@@ -680,12 +695,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       setCardError(null);
       setCardSecurityNotice('تم تأكيد حذف وسيلة الدفع بنجاح بعد التحقق من هويتك عبر البريد الإلكتروني.');
 
-      sendSecurityAlertEmail({
-        email: currentUser.email,
-        username: currentUser.displayName,
-        actionType: 'card_removed',
-        cardLast4: last4
-      }).catch(() => {});
+      const effectiveEmail = (currentUser.email || email || '').trim();
+      if (effectiveEmail) {
+        sendSecurityAlertEmail({
+          email: effectiveEmail,
+          username: displayName.trim() || currentUser.displayName,
+          actionType: 'card_removed',
+          cardLast4: last4
+        }).catch(() => {});
+      }
 
       setTimeout(() => setCardSecurityNotice(null), 7000);
     }
@@ -703,10 +721,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     const actionType = cardOtpAction === 'save' ? 'card_change_requested' : 'card_removal_requested';
     const last4 = cardOtpAction === 'save' ? (pendingCardData?.last4 || '****') : (currentUser.savedCard?.last4 || '****');
     const cardType = cardOtpAction === 'save' ? pendingCardData?.cardType : currentUser.savedCard?.cardType;
+    const effectiveEmail = (currentUser.email || email || '').trim();
 
     sendSecurityAlertEmail({
-      email: currentUser.email,
-      username: currentUser.displayName,
+      email: effectiveEmail,
+      username: displayName.trim() || currentUser.displayName,
       actionType,
       cardLast4: last4,
       cardType,
@@ -2275,7 +2294,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs space-y-2">
                 <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
                   <span>البريد المعتمد للتحقق:</span>
-                  <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">{currentUser.email}</span>
+                  <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">{currentUser.email || email || 'غير مسجل'}</span>
                 </div>
                 <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
                   <span>البطاقة البنكية:</span>
@@ -2289,8 +2308,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
               <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                 {cardOtpAction === 'save'
-                  ? `لحماية أموالك من أي إضافة أو تغيير غير مصرح به، أرسلنا رمز تحقق أمني (OTP) مكوّن من 6 أرقام إلى بريدك الإلكتروني المسجل لدينا (${currentUser.email}). يرجى إدخال الرمز لتأكيد العملية:`
-                  : `لتأكيد رغبتك في حذف وإلغاء ارتباط وسيلة الدفع بحسابك، أرسلنا رمز تحقق أمني (OTP) مكوّن من 6 أرقام إلى بريدك الإلكتروني المسجل لدينا (${currentUser.email}). يرجى كتابة الرمز لتأكيد الإزالة:`}
+                  ? `لحماية أموالك من أي إضافة أو تغيير غير مصرح به، أرسلنا رمز تحقق أمني (OTP) مكوّن من 6 أرقام إلى بريدك الإلكتروني (${currentUser.email || email}). يرجى إدخال الرمز لتأكيد العملية:`
+                  : `لتأكيد رغبتك في حذف وإلغاء ارتباط وسيلة الدفع بحسابك، أرسلنا رمز تحقق أمني (OTP) مكوّن من 6 أرقام إلى بريدك الإلكتروني (${currentUser.email || email}). يرجى كتابة الرمز لتأكيد الإزالة:`}
               </p>
 
               <div>
