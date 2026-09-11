@@ -131,7 +131,7 @@ function getStripe(): Stripe | null {
   return stripeClient;
 }
 
-function getGmailTransporter(): Transporter | null {
+function getGmailTransporter(port = 465, secure = true): Transporter | null {
   const rawUser = process.env.GMAIL_USER?.trim();
   const rawPass = process.env.GMAIL_APP_PASSWORD?.trim();
   const user = rawUser ? rawUser.replace(/['"]+/g, "").trim() : "";
@@ -141,18 +141,17 @@ function getGmailTransporter(): Transporter | null {
     return null;
   }
 
-  // Use direct SSL on port 465 with tight timeouts suited for serverless runtimes
   return nodemailer.createTransport({
     host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
+    port,
+    secure,
     auth: {
       user,
       pass
     },
-    connectionTimeout: 4000,
-    greetingTimeout: 4000,
-    socketTimeout: 5000
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 8000
   });
 }
 
@@ -206,39 +205,73 @@ async function sendSystemEmail({
     }
   }
 
-  // 2. Try Gmail SMTP
-  const transporter = getGmailTransporter();
-  const gmailUser = process.env.GMAIL_USER?.trim();
+  // 2. Try Gmail SMTP with automatic dual-port fallback (465 SSL -> 587 STARTTLS)
+  const rawUser = process.env.GMAIL_USER?.trim();
+  const rawPass = process.env.GMAIL_APP_PASSWORD?.trim();
+  const gmailUser = rawUser ? rawUser.replace(/['"]+/g, "").trim() : "";
+  const gmailPass = rawPass ? rawPass.replace(/['"]+/g, "").replace(/\s+/g, "") : "";
 
-  // Direct Gmail SMTP Dispatch with 6-second watchdog timeout
-  if (transporter && gmailUser) {
+  if (gmailUser && gmailPass) {
+    // Attempt A: Port 465 (Direct SSL)
     try {
-      const info = await Promise.race([
-        transporter.sendMail({
-          from: `"سوشيال كارت SocialCart" <${gmailUser}>`,
-          to,
-          subject,
-          html
-        }),
-        new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error("استغرق خادم البريد وقتاً طويلاً (تجاوز 6 ثوانٍ)")), 6000)
-        )
-      ]);
-      lastGmailError = null;
-      console.log(`✅ [Gmail SMTP Success] MessageId: ${info.messageId} to ${to}`);
-      return {
-        success: true,
-        deliveryStatus: "sent",
-        deliveryId: info.messageId,
-        message: `تم إرسال البريد الإلكتروني بنجاح عبر Gmail إلى (${to}).`
-      };
-    } catch (gmailErr: any) {
-      lastGmailError = gmailErr.message;
-      console.warn("⚠️ [Gmail SMTP Error]:", gmailErr.message);
+      const transporter465 = getGmailTransporter(465, true);
+      if (transporter465) {
+        const info = await Promise.race([
+          transporter465.sendMail({
+            from: `"سوشيال كارت SocialCart" <${gmailUser}>`,
+            to,
+            subject,
+            html
+          }),
+          new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error("مهلة الاتصال عبر المنفذ 465 استغرقت أكثر من 8 ثوانٍ")), 8000)
+          )
+        ]);
+        lastGmailError = null;
+        console.log(`✅ [Gmail SMTP Success (Port 465)] MessageId: ${info.messageId} to ${to}`);
+        return {
+          success: true,
+          deliveryStatus: "sent",
+          deliveryId: info.messageId,
+          message: `تم إرسال البريد الإلكتروني بنجاح عبر Gmail إلى (${to}).`
+        };
+      }
+    } catch (err465: any) {
+      console.warn("⚠️ [Gmail SMTP 465 Failed, attempting Port 587 fallback]:", err465.message);
+      lastGmailError = err465.message;
+    }
+
+    // Attempt B: Port 587 (STARTTLS fallback)
+    try {
+      const transporter587 = getGmailTransporter(587, false);
+      if (transporter587) {
+        const info = await Promise.race([
+          transporter587.sendMail({
+            from: `"سوشيال كارت SocialCart" <${gmailUser}>`,
+            to,
+            subject,
+            html
+          }),
+          new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error("مهلة الاتصال عبر المنفذ 587 استغرقت أكثر من 8 ثوانٍ")), 8000)
+          )
+        ]);
+        lastGmailError = null;
+        console.log(`✅ [Gmail SMTP Success (Port 587)] MessageId: ${info.messageId} to ${to}`);
+        return {
+          success: true,
+          deliveryStatus: "sent",
+          deliveryId: info.messageId,
+          message: `تم إرسال البريد الإلكتروني بنجاح عبر Gmail إلى (${to}).`
+        };
+      }
+    } catch (err587: any) {
+      lastGmailError = err587.message;
+      console.warn("⚠️ [Gmail SMTP 587 Failed]:", err587.message);
       return {
         success: false,
         deliveryStatus: "gmail_error",
-        message: `فشل إرسال البريد عبر Gmail SMTP: ${gmailErr.message}. يرجى التحقق من صحة كلمة مرور التطبيقات في إعدادات البيئة على Vercel.`
+        message: `فشل إرسال البريد عبر Gmail SMTP: ${err587.message}. يرجى التأكد من تفعيل التحقق بخطوتين وإنشاء كلمة مرور تطبيقات جديدة.`
       };
     }
   }
