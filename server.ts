@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 import Stripe from "stripe";
 import { Resend } from "resend";
 import nodemailer, { type Transporter } from "nodemailer";
@@ -11,9 +10,6 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
-
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // Enable CORS for Vercel Serverless deployments and preview environments
 app.use((req, res, next) => {
@@ -28,7 +24,10 @@ app.use((req, res, next) => {
 
 // Normalize request URLs for Vercel serverless functions (handling rewrites and stripped prefixes)
 app.use((req, res, next) => {
-  if (req.query && req.query.path) {
+  const forwarded = (req.headers["x-forwarded-url"] as string) || (req.headers["x-matched-path"] as string);
+  if (forwarded && forwarded.startsWith("/api/")) {
+    req.url = forwarded;
+  } else if (req.query && req.query.path) {
     const rawPath = Array.isArray(req.query.path) ? req.query.path.join("/") : String(req.query.path);
     req.url = `/api/${rawPath.replace(/^\/+/, "")}`;
   } else if (!req.url.startsWith("/api") && !req.url.startsWith("/assets") && req.url !== "/" && req.url !== "") {
@@ -36,6 +35,17 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Support pre-parsed bodies from serverless platform environments (e.g. Vercel)
+app.use((req, res, next) => {
+  if (req.body && typeof req.body === "object" && Object.keys(req.body).length > 0) {
+    (req as any)._body = true;
+  }
+  next();
+});
+
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // Persistent File-Based Storage with Vercel /tmp fallback
 const isVercel = Boolean(process.env.VERCEL);
@@ -95,22 +105,29 @@ function getResend(): Resend | null {
   return resendClient;
 }
 
-let gmailTransporter: Transporter | null = null;
 function getGmailTransporter(): Transporter | null {
-  const user = process.env.GMAIL_USER?.trim();
+  const rawUser = process.env.GMAIL_USER?.trim();
   const rawPass = process.env.GMAIL_APP_PASSWORD?.trim();
-  const pass = rawPass ? rawPass.replace(/\s+/g, "") : "";
+  const user = rawUser ? rawUser.replace(/['"]+/g, "").trim() : "";
+  const pass = rawPass ? rawPass.replace(/['"]+/g, "").replace(/\s+/g, "") : "";
 
-  if (!gmailTransporter && user && pass) {
-    gmailTransporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user,
-        pass
-      }
-    });
+  if (!user || !pass) {
+    return null;
   }
-  return gmailTransporter;
+
+  // Use direct SSL on port 465 for instantaneous TLS handshake and high serverless reliability
+  return nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: {
+      user,
+      pass
+    },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000
+  });
 }
 
 // 60-Second Cooldown Tracking for Verification Messages
@@ -415,7 +432,11 @@ app.post(["/api/email/send-otp", "/email/send-otp"], async (req, res) => {
     });
   } catch (error: any) {
     console.error("Send OTP error:", error);
-    res.status(500).json({ error: error.message || "Failed to send verification email." });
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || "Failed to send verification email.",
+      message: `خطأ أثناء إرسال البريد: ${error.message || "يرجى التحقق من إعدادات Vercel"}`
+    });
   }
 });
 
@@ -568,7 +589,11 @@ app.post(["/api/email/security-alert", "/email/security-alert"], async (req, res
     });
   } catch (error: any) {
     console.error("Security alert error:", error);
-    res.status(500).json({ error: error.message || "Failed to send security alert." });
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || "Failed to send security alert.",
+      message: `خطأ أثناء إرسال الإشعار: ${error.message || "يرجى التحقق من إعدادات Vercel"}`
+    });
   }
 });
 
@@ -893,6 +918,7 @@ app.post("/api/users", (req, res) => {
 // Start Server with Vite middleware for dev / static for prod
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
