@@ -11,7 +11,7 @@ export interface User {
   sellerReviewsCount: number;
   totalSales: number;
   trustScore: number; // e.g. 98%
-  savedCard?: SavedCard;
+  savedCard?: SavedCard | null;
   password?: string;
   isEmailVerified?: boolean;
   twoFactorEnabled?: boolean;

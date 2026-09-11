@@ -1004,16 +1004,16 @@ app.post("/api/users", (req, res) => {
     const users = readJsonFile<any[]>(USERS_FILE, []);
     const existingIndex = users.findIndex(u => 
       (user.id && u.id === user.id) || 
-      (user.email && u.email && u.email.toLowerCase() === user.email.toLowerCase()) ||
-      (user.username && u.username && u.username.toLowerCase() === user.username.toLowerCase())
+      (user.username && u.username && u.username.toLowerCase() === user.username.toLowerCase()) ||
+      (user.email && u.email && u.email.toLowerCase() === user.email.toLowerCase())
     );
 
     if (existingIndex >= 0) {
       users[existingIndex] = {
         ...users[existingIndex],
         ...user,
-        // Ensure nested or sensitive fields are preserved if not provided in update
-        savedCard: user.savedCard !== undefined ? user.savedCard : users[existingIndex].savedCard,
+        email: user.email ? user.email : users[existingIndex].email,
+        savedCard: ('savedCard' in user) ? user.savedCard : users[existingIndex].savedCard,
         password: user.password !== undefined ? user.password : users[existingIndex].password,
         bio: user.bio !== undefined ? user.bio : users[existingIndex].bio,
         updatedAt: new Date().toISOString()

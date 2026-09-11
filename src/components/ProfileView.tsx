@@ -751,14 +751,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       }, 7000);
     } else if (cardOtpAction === 'remove') {
       const last4 = currentUser.savedCard?.last4 || '****';
-      onUpdateProfile({ savedCard: undefined });
+      onUpdateProfile({ savedCard: null });
       setRawCardNumber('');
       setCardHolder('');
       setExpiry('');
       setCvv('');
+      setPendingCardData(null);
       setCardSuccess(false);
       setCardError(null);
-      setCardSecurityNotice('تم تأكيد حذف وسيلة الدفع بنجاح بعد التحقق من هويتك عبر البريد الإلكتروني.');
+      setCardSecurityNotice('تم تأكيد حذف وسيلة الدفع نهائياً بنجاح بعد التحقق من هويتك عبر البريد الإلكتروني.');
 
       const effectiveEmail = (currentUser.email || email || '').trim();
       if (effectiveEmail) {

@@ -21,6 +21,7 @@ import { auth } from './lib/firebase';
 import { onAuthStateChanged, signOut, updatePassword, updateProfile, updateEmail } from 'firebase/auth';
 import { 
   User, 
+  SavedCard,
   Post, 
   Product, 
   CartItem, 
@@ -394,7 +395,9 @@ export default function App() {
           try { registeredUsers = JSON.parse(registeredStr); } catch {}
         }
         const matchedReg = registeredUsers.find(u => 
-          u.id === fbUser.uid || (fbUser.email && u.email?.toLowerCase() === fbUser.email.toLowerCase())
+          (u.id && u.id === fbUser.uid) || 
+          (existingUser.email && u.email?.toLowerCase() === existingUser.email.toLowerCase()) ||
+          (fbUser.email && u.email?.toLowerCase() === fbUser.email.toLowerCase())
         );
 
         // Also check if server has saved profile
@@ -403,20 +406,37 @@ export default function App() {
           const res = await fetch(`/api/users/${encodeURIComponent(fbUser.uid)}`);
           if (res.ok) {
             serverUser = await res.json();
-          } else if (fbUser.email) {
-            const res2 = await fetch(`/api/users/${encodeURIComponent(fbUser.email)}`);
+          } else if (existingUser.email) {
+            const res2 = await fetch(`/api/users/${encodeURIComponent(existingUser.email)}`);
             if (res2.ok) serverUser = await res2.json();
+          } else if (fbUser.email) {
+            const res3 = await fetch(`/api/users/${encodeURIComponent(fbUser.email)}`);
+            if (res3.ok) serverUser = await res3.json();
           }
         } catch {}
 
+        // CRITICAL BUGFIX: User's explicitly updated email in existingUser MUST take priority over fbUser.email!
+        // Otherwise on page reload fbUser.email (Firebase Auth token) overrides the updated email!
+        const resolvedEmail = existingUser.email || serverUser.email || matchedReg?.email || fbUser.email || '';
+
+        // CRITICAL BUGFIX: Card state must strictly respect explicit deletions (null) and updates
+        let resolvedCard: SavedCard | null = null;
+        if (existingUser.savedCard !== undefined) {
+          resolvedCard = existingUser.savedCard;
+        } else if (serverUser.savedCard !== undefined) {
+          resolvedCard = serverUser.savedCard;
+        } else if (matchedReg?.savedCard !== undefined) {
+          resolvedCard = matchedReg.savedCard;
+        }
+
         const mergedUser: User = {
           id: fbUser.uid,
-          username: existingUser.username || matchedReg?.username || serverUser.username || (fbUser.displayName ? fbUser.displayName.toLowerCase().replace(/\s+/g, '_') : (fbUser.email?.split('@')[0] || 'user')),
-          displayName: existingUser.displayName || matchedReg?.displayName || serverUser.displayName || fbUser.displayName || fbUser.email?.split('@')[0] || 'مستخدم مسجل',
-          email: fbUser.email || existingUser.email || matchedReg?.email || serverUser.email || '',
+          username: existingUser.username || matchedReg?.username || serverUser.username || (fbUser.displayName ? fbUser.displayName.toLowerCase().replace(/\s+/g, '_') : (resolvedEmail ? resolvedEmail.split('@')[0] : 'user')),
+          displayName: existingUser.displayName || matchedReg?.displayName || serverUser.displayName || fbUser.displayName || (resolvedEmail ? resolvedEmail.split('@')[0] : 'مستخدم مسجل'),
+          email: resolvedEmail,
           avatar: existingUser.avatar || matchedReg?.avatar || serverUser.avatar || fbUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
           bio: existingUser.bio !== undefined ? existingUser.bio : (matchedReg?.bio !== undefined ? matchedReg.bio : (serverUser.bio !== undefined ? serverUser.bio : '')),
-          savedCard: existingUser.savedCard || matchedReg?.savedCard || serverUser.savedCard,
+          savedCard: resolvedCard,
           password: existingUser.password || matchedReg?.password || serverUser.password,
           joinedDate: existingUser.joinedDate || matchedReg?.joinedDate || serverUser.joinedDate || 'سبتمبر 2026',
           isVerifiedSeller: existingUser.isVerifiedSeller ?? matchedReg?.isVerifiedSeller ?? serverUser.isVerifiedSeller ?? false,
@@ -424,7 +444,7 @@ export default function App() {
           sellerReviewsCount: existingUser.sellerReviewsCount ?? matchedReg?.sellerReviewsCount ?? serverUser.sellerReviewsCount ?? 0,
           totalSales: existingUser.totalSales ?? matchedReg?.totalSales ?? serverUser.totalSales ?? 0,
           trustScore: existingUser.trustScore ?? matchedReg?.trustScore ?? serverUser.trustScore ?? 100,
-          isEmailVerified: fbUser.emailVerified ?? existingUser.isEmailVerified ?? matchedReg?.isEmailVerified ?? false,
+          isEmailVerified: existingUser.isEmailVerified ?? fbUser.emailVerified ?? matchedReg?.isEmailVerified ?? false,
           twoFactorEnabled: existingUser.twoFactorEnabled ?? matchedReg?.twoFactorEnabled ?? false
         };
 
@@ -434,7 +454,11 @@ export default function App() {
         localStorage.setItem('socialcart_user', JSON.stringify(mergedUser));
 
         // Update in registered users list
-        const regIdx = registeredUsers.findIndex(u => u.id === mergedUser.id || (u.email && u.email.toLowerCase() === mergedUser.email.toLowerCase()));
+        const regIdx = registeredUsers.findIndex(u => 
+          u.id === mergedUser.id || 
+          (existingUser.email && u.email && u.email.toLowerCase() === existingUser.email.toLowerCase()) ||
+          (mergedUser.email && u.email && u.email.toLowerCase() === mergedUser.email.toLowerCase())
+        );
         if (regIdx >= 0) {
           registeredUsers[regIdx] = { ...registeredUsers[regIdx], ...mergedUser };
         } else {
@@ -465,7 +489,14 @@ export default function App() {
             .then(serverUser => {
               if (serverUser) {
                 setCurrentUser(prev => {
-                  const merged = { ...prev, ...serverUser };
+                  const merged: User = {
+                    ...serverUser,
+                    ...prev,
+                    email: prev.email || serverUser.email || '',
+                    displayName: prev.displayName || serverUser.displayName || '',
+                    username: prev.username || serverUser.username || '',
+                    savedCard: prev.savedCard !== undefined ? prev.savedCard : (serverUser.savedCard ?? null)
+                  };
                   localStorage.setItem('socialcart_user', JSON.stringify(merged));
                   return merged;
                 });
@@ -503,7 +534,7 @@ export default function App() {
       ...existing,
       ...user,
       password: user.password || existing.password,
-      savedCard: user.savedCard || existing.savedCard,
+      savedCard: user.savedCard !== undefined ? user.savedCard : (existing.savedCard ?? null),
       bio: user.bio !== undefined ? user.bio : existing.bio,
     } : user;
 
@@ -1190,10 +1221,16 @@ export default function App() {
   // 8. Profile Update Handler (Saves Name, Username, Bio, Password, Card, Email locally & to server)
   const handleUpdateProfile = (updated: Partial<User>) => {
     let nextUser: User = { ...currentUser, ...updated };
+    if ('savedCard' in updated) {
+      nextUser.savedCard = updated.savedCard ?? null;
+    }
 
     setCurrentUser(prev => {
-      nextUser = { ...prev, ...updated };
-      return nextUser;
+      const merged = { ...prev, ...updated };
+      if ('savedCard' in updated) {
+        merged.savedCard = updated.savedCard ?? null;
+      }
+      return merged;
     });
 
     // 1. Immediately persist to active user localStorage
@@ -1207,11 +1244,17 @@ export default function App() {
     }
     const idx = registeredUsers.findIndex(u => 
       (nextUser.id && u.id === nextUser.id) || 
+      (currentUser.id && u.id === currentUser.id) ||
+      (currentUser.email && u.email && u.email.toLowerCase() === currentUser.email.toLowerCase()) ||
       (nextUser.email && u.email && u.email.toLowerCase() === nextUser.email.toLowerCase()) ||
       (nextUser.username && u.username && u.username.toLowerCase() === nextUser.username.toLowerCase())
     );
     if (idx >= 0) {
-      registeredUsers[idx] = { ...registeredUsers[idx], ...nextUser };
+      registeredUsers[idx] = { 
+        ...registeredUsers[idx], 
+        ...nextUser,
+        savedCard: nextUser.savedCard ?? null
+      };
     } else {
       registeredUsers.push(nextUser);
     }
