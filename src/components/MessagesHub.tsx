@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Conversation, User, MediaItem } from '../types';
 import { scanUrlOrFile } from '../utils/security';
+import { formatMessageTime, formatConversationTime } from '../utils/dateUtils';
 
 interface MessagesHubProps {
   conversations: Conversation[];
@@ -70,6 +71,15 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
   const [attachedMedia, setAttachedMedia] = useState<MediaItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Periodic re-render every 30s so relative times ('الآن', 'منذ 5 دقائق') stay fresh
+  const [, setTimeTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeTick(t => t + 1);
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   // New Chat Modal
   const [showNewChatModal, setShowNewChatModal] = useState(false);
@@ -401,7 +411,9 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                             <BadgeCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                           )}
                         </div>
-                        <span className="text-[10px] text-slate-400 shrink-0">{conv.lastMessageTime}</span>
+                        <span className="text-[10px] text-slate-400 shrink-0">
+                          {formatConversationTime(conv.lastMessageTime)}
+                        </span>
                       </div>
 
                       {/* Related product pill if market inquiry */}
@@ -539,53 +551,69 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                     </p>
                   </div>
                 ) : (
-                  activeConversation.messages.map(msg => (
-                    <div
-                      key={msg.id}
-                      className={`flex items-start gap-2.5 max-w-[80%] ${
-                        msg.isMe ? 'mr-auto flex-row-reverse' : 'ml-auto'
-                      }`}
-                    >
-                      <img
-                        src={msg.senderAvatar}
-                        alt={msg.senderUsername}
-                        className="w-7 h-7 rounded-lg object-cover ring-1 ring-slate-200 dark:ring-slate-700 mt-0.5"
-                      />
+                  activeConversation.messages.map(msg => {
+                    // Accurately and dynamically check if this message is from the currently logged in user
+                    const isMsgMe = (currentUser && (
+                      (msg.senderId && currentUser.id && msg.senderId === currentUser.id) ||
+                      (msg.senderUsername && currentUser.username && msg.senderUsername.toLowerCase() === currentUser.username.toLowerCase())
+                    )) ?? msg.isMe;
 
-                      <div className="space-y-1">
-                        <div
-                          className={`p-3 rounded-2xl text-xs leading-relaxed shadow-xs ${
-                            msg.isMe
-                              ? (isMarket 
-                                  ? 'bg-emerald-600 text-white rounded-tr-none' 
-                                  : 'bg-indigo-600 text-white rounded-tr-none')
-                              : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-tl-none'
-                          }`}
-                        >
-                          <p>{msg.text}</p>
+                    const bubbleAvatar = isMsgMe 
+                      ? currentUser.avatar 
+                      : (msg.senderAvatar || activeConversation.participantAvatar);
 
-                          {/* Media items */}
-                          {msg.media && msg.media.length > 0 && (
-                            <div className="mt-2 space-y-2">
-                              {msg.media.map(m => (
-                                <div key={m.id} className="rounded-xl overflow-hidden border border-white/20">
-                                  {m.type === 'video' ? (
-                                    <video src={m.url} controls className="w-full max-h-48 rounded-lg bg-black" />
-                                  ) : (
-                                    <img src={m.url} alt={m.caption || ''} className="w-full max-h-48 object-cover" />
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                    const bubbleUsername = isMsgMe 
+                      ? currentUser.username 
+                      : (msg.senderUsername || activeConversation.participantUsername);
+
+                    return (
+                      <div
+                        key={msg.id}
+                        className={`flex items-start gap-2.5 max-w-[80%] ${
+                          isMsgMe ? 'mr-auto flex-row-reverse' : 'ml-auto'
+                        }`}
+                      >
+                        <img
+                          src={bubbleAvatar}
+                          alt={bubbleUsername}
+                          className="w-7 h-7 rounded-lg object-cover ring-1 ring-slate-200 dark:ring-slate-700 mt-0.5 shrink-0"
+                        />
+
+                        <div className="space-y-1 max-w-full">
+                          <div
+                            className={`p-3 rounded-2xl text-xs leading-relaxed shadow-xs ${
+                              isMsgMe
+                                ? (isMarket 
+                                    ? 'bg-emerald-600 text-white rounded-tr-none' 
+                                    : 'bg-indigo-600 text-white rounded-tr-none')
+                                : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-tl-none'
+                            }`}
+                          >
+                            <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+
+                            {/* Media items */}
+                            {msg.media && msg.media.length > 0 && (
+                              <div className="mt-2 space-y-2">
+                                {msg.media.map(m => (
+                                  <div key={m.id} className="rounded-xl overflow-hidden border border-white/20">
+                                    {m.type === 'video' ? (
+                                      <video src={m.url} controls className="w-full max-h-48 rounded-lg bg-black" />
+                                    ) : (
+                                      <img src={m.url} alt={m.caption || ''} className="w-full max-h-48 object-cover" />
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <span className={`text-[9px] text-slate-400 block px-1 ${isMsgMe ? 'text-left' : 'text-right'}`}>
+                            {formatMessageTime(msg.createdAt)}
+                          </span>
                         </div>
-
-                        <span className={`text-[9px] text-slate-400 block px-1 ${msg.isMe ? 'text-left' : 'text-right'}`}>
-                          {msg.createdAt}
-                        </span>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
                 <div ref={messagesEndRef} />
               </div>

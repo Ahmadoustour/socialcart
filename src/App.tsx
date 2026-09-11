@@ -27,6 +27,7 @@ import {
   CartItem, 
   Order, 
   Conversation, 
+  Message,
   NotificationItem, 
   MediaItem,
   SellerReview
@@ -55,6 +56,11 @@ const getUserStorageKey = (prefix: string, userId: string) => {
 };
 
 function loadUserCart(userId: string): CartItem[] {
+  // Clean up legacy unpartitioned cart key to prevent cross-account contamination
+  try {
+    localStorage.removeItem('socialcart_cart');
+  } catch {}
+
   const userKey = getUserStorageKey('socialcart_cart', userId);
   const saved = localStorage.getItem(userKey);
   if (saved) {
@@ -63,75 +69,105 @@ function loadUserCart(userId: string): CartItem[] {
       if (Array.isArray(parsed)) return parsed.filter(c => c && c.product && c.product.id);
     } catch {}
   }
-  // Migration fallback: if user cart is empty and user is logged in, check legacy global cart
-  if (userId && userId !== 'guest') {
-    const legacy = localStorage.getItem('socialcart_cart');
-    if (legacy) {
-      try {
-        const parsed = JSON.parse(legacy);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          localStorage.setItem(userKey, legacy);
-          return parsed.filter(c => c && c.product && c.product.id);
-        }
-      } catch {}
-    }
-  }
   return [];
 }
 
 function loadUserOrders(userId: string, userEmail?: string): Order[] {
+  // Clean up legacy unpartitioned orders key
+  try {
+    localStorage.removeItem('socialcart_orders');
+  } catch {}
+
   const userKey = getUserStorageKey('socialcart_orders', userId);
   const saved = localStorage.getItem(userKey);
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) return parsed.filter(o => o && o.id);
-    } catch {}
-  }
-  // Migration fallback: check legacy global orders pool
-  const legacy = localStorage.getItem('socialcart_orders');
-  if (legacy) {
-    try {
-      const parsed = JSON.parse(legacy);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const filtered = parsed.filter(o => 
+      if (Array.isArray(parsed)) {
+        return parsed.filter(o => 
           o && o.id && (
-            !o.buyerId || 
             o.buyerId === userId || 
             (userEmail && o.buyerEmail?.toLowerCase() === userEmail.toLowerCase())
           )
         );
-        if (filtered.length > 0) {
-          localStorage.setItem(userKey, JSON.stringify(filtered));
-          return filtered;
-        }
       }
     } catch {}
   }
   return [];
 }
 
-function loadUserConversations(userId: string): Conversation[] {
+function loadUserConversations(userId: string, username?: string): Conversation[] {
+  // Clean up dangerous legacy shared key so it can never leak to new accounts
+  try {
+    localStorage.removeItem('socialcart_conversations');
+  } catch {}
+
+  const cleanUser = (username || '').replace(/^@/, '').toLowerCase().trim();
   const userKey = getUserStorageKey('socialcart_conversations', userId);
+  let userList: Conversation[] = [];
+
+  // 1. Check user-specific storage key
   const saved = localStorage.getItem(userKey);
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) return parsed.filter(c => c && c.id);
-    } catch {}
-  }
-  // Migration fallback from global conversations
-  const legacy = localStorage.getItem('socialcart_conversations');
-  if (legacy) {
-    try {
-      const parsed = JSON.parse(legacy);
       if (Array.isArray(parsed)) {
-        localStorage.setItem(userKey, legacy);
-        return parsed.filter(c => c && c.id);
+        userList = parsed.filter(c => {
+          if (!c || !c.id) return false;
+          // STRICT PRIVACY ISOLATION:
+          // A conversation belongs to this user ONLY if they are the owner, creator, or participant!
+          if (cleanUser) {
+            const hasParticipant = c.participants && Array.isArray(c.participants) 
+              ? c.participants.map((p: string) => p.toLowerCase()).includes(cleanUser)
+              : false;
+            const isTarget = c.participantUsername?.toLowerCase() === cleanUser;
+            const isCreator = c.creatorUsername?.toLowerCase() === cleanUser;
+            const isOwner = c.userId === userId;
+            return isOwner || isTarget || isCreator || hasParticipant;
+          }
+          return c.userId === userId;
+        });
       }
     } catch {}
   }
-  return [];
+
+  // 2. Also check shared conversation registry for cross-user routing
+  try {
+    const shared = localStorage.getItem('socialcart_shared_conversations_pool');
+    if (shared && cleanUser) {
+      const parsedShared: Conversation[] = JSON.parse(shared);
+      if (Array.isArray(parsedShared)) {
+        parsedShared.forEach(poolConv => {
+          if (!poolConv || !poolConv.id) return;
+          const participants = (poolConv.participants || [
+            poolConv.creatorUsername || '',
+            poolConv.participantUsername || ''
+          ]).map(p => p.toLowerCase());
+
+          if (participants.includes(cleanUser)) {
+            const existingIdx = userList.findIndex(c => c.id === poolConv.id);
+            let adapted = { ...poolConv };
+            // If this user is the recipient (not creator), adjust recipient labels to show creator
+            if (poolConv.participantUsername?.toLowerCase() === cleanUser && poolConv.creatorUsername) {
+              adapted = {
+                ...adapted,
+                participantUsername: poolConv.creatorUsername,
+                participantDisplayName: poolConv.creatorDisplayName || poolConv.creatorUsername,
+                participantAvatar: poolConv.creatorAvatar || poolConv.participantAvatar,
+              };
+            }
+            if (existingIdx >= 0) {
+              userList[existingIdx] = adapted;
+            } else {
+              userList.push(adapted);
+            }
+          }
+        });
+      }
+    }
+  } catch {}
+
+  return userList;
 }
 
 function loadUserNotifications(userId: string): NotificationItem[] {
@@ -247,7 +283,26 @@ export default function App() {
       const parsed: Product[] = JSON.parse(saved);
       if (!Array.isArray(parsed)) return [];
       const demoMockIds = new Set(['demo_prod_1', 'demo_prod_2', 'demo_prod_3']);
-      return parsed.filter(p => p && p.id && !demoMockIds.has(p.id));
+      return parsed
+        .filter(p => p && p.id && !demoMockIds.has(p.id))
+        .map(p => {
+          const revs = p.reviews || [];
+          const actualCount = revs.length;
+          const actualRating = actualCount > 0
+            ? Number((revs.reduce((s, r) => s + Number(r.rating || 0), 0) / actualCount).toFixed(1))
+            : (actualCount === 0 ? 0 : (p.seller?.rating || 0));
+
+          return {
+            ...p,
+            reviews: revs,
+            rating: actualRating,
+            seller: {
+              ...p.seller,
+              rating: actualRating,
+              reviewsCount: actualCount
+            }
+          };
+        });
     } catch {
       return [];
     }
@@ -262,7 +317,7 @@ export default function App() {
   });
 
   const [conversations, setConversations] = useState<Conversation[]>(() => {
-    return loadUserConversations(currentUser.id);
+    return loadUserConversations(currentUser.id, currentUser.username);
   });
 
   const [selectedSocialConvId, setSelectedSocialConvId] = useState<string | null>(null);
@@ -306,27 +361,27 @@ export default function App() {
       // 2. Orders / Purchases: Load user-specific orders
       setOrders(loadUserOrders(currentId, currentUser.email));
 
-      // 3. Conversations / Messages: Load user-specific conversations
-      setConversations(loadUserConversations(currentId));
+      // 3. Conversations / Messages: Load user-specific conversations isolated to current user
+      setConversations(loadUserConversations(currentId, currentUser.username));
 
       // 4. Notifications: Load user-specific notifications
       setNotifications(loadUserNotifications(currentId));
 
       previousUserIdRef.current = currentId;
     }
-  }, [currentUser.id, currentUser.email]);
+  }, [currentUser.id, currentUser.username, currentUser.email]);
 
-  // Save per-user changes to storage
+  // Save per-user changes to storage (strictly scoped to current user ID)
   useEffect(() => {
+    if (previousUserIdRef.current !== currentUser.id) return;
     const key = getUserStorageKey('socialcart_cart', currentUser.id);
     localStorage.setItem(key, JSON.stringify(cartItems));
-    localStorage.setItem('socialcart_cart', JSON.stringify(cartItems));
   }, [cartItems, currentUser.id]);
 
   useEffect(() => {
+    if (previousUserIdRef.current !== currentUser.id) return;
     const key = getUserStorageKey('socialcart_orders', currentUser.id);
     localStorage.setItem(key, JSON.stringify(orders));
-    localStorage.setItem('socialcart_orders', JSON.stringify(orders));
   }, [orders, currentUser.id]);
 
   useEffect(() => {
@@ -338,12 +393,43 @@ export default function App() {
   }, [products]);
 
   useEffect(() => {
+    // Prevent race condition: if user just changed, do NOT save old user conversations into new user key
+    if (previousUserIdRef.current !== currentUser.id) return;
+
     const key = getUserStorageKey('socialcart_conversations', currentUser.id);
     localStorage.setItem(key, JSON.stringify(conversations));
-    localStorage.setItem('socialcart_conversations', JSON.stringify(conversations));
-  }, [conversations, currentUser.id]);
+
+    // Also sync to shared pool with participant tags
+    try {
+      const existingPoolRaw = localStorage.getItem('socialcart_shared_conversations_pool');
+      const existingPool: Conversation[] = existingPoolRaw ? JSON.parse(existingPoolRaw) : [];
+      const poolMap = new Map<string, Conversation>();
+      if (Array.isArray(existingPool)) {
+        existingPool.forEach(c => { if (c && c.id) poolMap.set(c.id, c); });
+      }
+      conversations.forEach(c => {
+        if (c && c.id) {
+          const participants = Array.from(new Set([
+            (currentUser.username || '').toLowerCase(),
+            (c.participantUsername || '').toLowerCase(),
+            ...(c.participants || []).map(p => p.toLowerCase())
+          ].filter(Boolean)));
+
+          poolMap.set(c.id, {
+            ...c,
+            participants,
+            creatorUsername: c.creatorUsername || currentUser.username,
+            creatorDisplayName: c.creatorDisplayName || currentUser.displayName,
+            creatorAvatar: c.creatorAvatar || currentUser.avatar
+          });
+        }
+      });
+      localStorage.setItem('socialcart_shared_conversations_pool', JSON.stringify(Array.from(poolMap.values())));
+    } catch {}
+  }, [conversations, currentUser.id, currentUser.username, currentUser.displayName, currentUser.avatar]);
 
   useEffect(() => {
+    if (previousUserIdRef.current !== currentUser.id) return;
     const key = getUserStorageKey('socialcart_notifications', currentUser.id);
     localStorage.setItem(key, JSON.stringify(notifications));
   }, [notifications, currentUser.id]);
@@ -396,8 +482,16 @@ export default function App() {
           if (Array.isArray(serverOrders) && serverOrders.length > 0) {
             setOrders(prev => {
               const map = new Map<string, Order>();
-              serverOrders.forEach(o => { if (o && o.id) map.set(o.id, o); });
-              prev.forEach(o => { if (o && o.id && !map.has(o.id)) map.set(o.id, o); });
+              serverOrders.forEach(o => { 
+                if (o && o.id && (o.buyerId === currentUser.id || (currentUser.email && o.buyerEmail?.toLowerCase() === currentUser.email.toLowerCase()))) {
+                  map.set(o.id, o);
+                }
+              });
+              prev.forEach(o => { 
+                if (o && o.id && (o.buyerId === currentUser.id || (currentUser.email && o.buyerEmail?.toLowerCase() === currentUser.email.toLowerCase())) && !map.has(o.id)) {
+                  map.set(o.id, o);
+                }
+              });
               const combined = Array.from(map.values());
               const key = getUserStorageKey('socialcart_orders', currentUser.id);
               localStorage.setItem(key, JSON.stringify(combined));
@@ -907,6 +1001,10 @@ export default function App() {
     fileUrl: string;
     downloadSize: string;
   }) => {
+    const hasExistingSellerReviews = Boolean(currentUser.sellerReviewsCount && currentUser.sellerReviewsCount > 0);
+    const initialRating = hasExistingSellerReviews ? (currentUser.sellerRating || 0) : 0;
+    const initialReviewsCount = hasExistingSellerReviews ? currentUser.sellerReviewsCount! : 0;
+
     const newProduct: Product = {
       id: `prod_${Date.now()}`,
       sellerId: currentUser.id,
@@ -915,9 +1013,9 @@ export default function App() {
         displayName: currentUser.displayName,
         avatar: currentUser.avatar,
         isVerified: true,
-        rating: 5.0,
-        reviewsCount: 1,
-        trustScore: 99
+        rating: initialRating,
+        reviewsCount: initialReviewsCount,
+        trustScore: 100
       },
       title: data.title,
       description: data.description,
@@ -930,7 +1028,7 @@ export default function App() {
       salesCount: 0,
       likesCount: 0,
       likedByMe: false,
-      createdAt: 'الآن',
+      createdAt: new Date().toISOString(),
       escrowProtected: true,
       reviews: []
     };
@@ -1224,14 +1322,15 @@ export default function App() {
 
   // 7. Messages Handlers
   const handleSendMessage = (conversationId: string, text: string, media?: MediaItem[]) => {
-    const newMsg = {
+    const nowIso = new Date().toISOString();
+    const newMsg: Message = {
       id: `msg_${Date.now()}`,
       senderId: currentUser.id,
       senderUsername: currentUser.username,
       senderAvatar: currentUser.avatar,
       text,
       media,
-      createdAt: 'الآن',
+      createdAt: nowIso,
       isMe: true
     };
 
@@ -1240,7 +1339,7 @@ export default function App() {
         return {
           ...c,
           lastMessage: text || (media?.length ? 'ملف وسائط مرفق' : ''),
-          lastMessageTime: 'الآن',
+          lastMessageTime: nowIso,
           unreadCount: 0,
           messages: [...c.messages, newMsg]
         };
@@ -1283,20 +1382,26 @@ export default function App() {
       return;
     }
 
+    const nowIso = new Date().toISOString();
     const newConvId = `conv_${Date.now()}`;
     const trimmedMessage = initialMessage?.trim();
     const newConv: Conversation = {
       id: newConvId,
       userId: currentUser.id,
+      creatorId: currentUser.id,
+      creatorUsername: currentUser.username,
+      creatorDisplayName: currentUser.displayName,
+      creatorAvatar: currentUser.avatar,
       participantId: `usr_${cleanUsername}`,
       participantUsername: cleanUsername,
       participantDisplayName,
       participantAvatar,
+      participants: Array.from(new Set([currentUser.username.toLowerCase(), cleanUsername.toLowerCase()])),
       isVerified: true,
       type,
       relatedProductTitle: type === 'market' ? productTitle : undefined,
       lastMessage: trimmedMessage || (type === 'market' && productTitle ? `استفسار: ${productTitle}` : (type === 'market' ? 'استفسار جديد في المتجر' : 'محادثة اجتماعية جديدة')),
-      lastMessageTime: 'الآن',
+      lastMessageTime: nowIso,
       unreadCount: 0,
       messages: trimmedMessage
         ? [
@@ -1306,7 +1411,7 @@ export default function App() {
               senderUsername: currentUser.username,
               senderAvatar: currentUser.avatar,
               text: trimmedMessage,
-              createdAt: 'الآن',
+              createdAt: nowIso,
               isMe: true
             }
           ]

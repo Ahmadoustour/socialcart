@@ -17,6 +17,19 @@ export const ProductReviewsModal: React.FC<ProductReviewsModalProps> = ({
 }) => {
   if (!isOpen || !product) return null;
 
+  const reviews = product.reviews || [];
+  const reviewsCount = reviews.length;
+  const avgRating = reviewsCount > 0
+    ? Number((reviews.reduce((acc, r) => acc + Number(r.rating || 0), 0) / reviewsCount).toFixed(1))
+    : 0;
+
+  const getSatisfactionLabel = (score: number) => {
+    if (score >= 4.5) return 'معدل رضا ممتاز للمشترين';
+    if (score >= 3.8) return 'معدل رضا جيد جداً للمشترين';
+    if (score >= 2.8) return 'معدل رضا مقبول';
+    return 'تقييمات متباينة';
+  };
+
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm animate-fadeIn overflow-y-auto"
@@ -41,31 +54,57 @@ export const ProductReviewsModal: React.FC<ProductReviewsModalProps> = ({
         </div>
 
         {/* Rating Summary */}
-        <div className="p-4 bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/80 rounded-2xl flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="text-center">
-              <span className="text-3xl font-black text-amber-600 dark:text-amber-400 block leading-none">
-                {product.seller.rating}
-              </span>
-              <div className="flex items-center justify-center gap-0.5 mt-1">
-                {[1, 2, 3, 4, 5].map((s) => (
-                  <Star key={s} className="w-3 h-3 fill-amber-400 text-amber-400" />
-                ))}
+        {reviewsCount === 0 ? (
+          <div className="p-4 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-2xl flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-300 flex items-center justify-center shrink-0">
+                <Star className="w-6 h-6 text-slate-300 dark:text-slate-500" />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                  منتج جديد — لا توجد تقييمات حتى الآن
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  لم يقم أي مشترٍ بتقييم هذا المنتج بعد. كن أول من يشتريه ويضع مراجعته!
+                </span>
               </div>
             </div>
-            <div>
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
-                معدل رضا ممتاز للمشترين
-              </span>
-              <span className="text-[11px] text-slate-500">مبني على {product.seller.reviewsCount} تقييماً معتمداً</span>
+
+            <div className="bg-white dark:bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1 shrink-0">
+              <ShieldCheck className="w-4 h-4 text-emerald-500" />
+              <span>ضمان 14 يوماً</span>
             </div>
           </div>
+        ) : (
+          <div className="p-4 bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/80 rounded-2xl flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="text-center">
+                <span className="text-3xl font-black text-amber-600 dark:text-amber-400 block leading-none">
+                  {avgRating}
+                </span>
+                <div className="flex items-center justify-center gap-0.5 mt-1">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <Star 
+                      key={s} 
+                      className={`w-3 h-3 ${s <= Math.round(avgRating) ? 'fill-amber-400 text-amber-400' : 'text-slate-300 dark:text-slate-600'}`} 
+                    />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                  {getSatisfactionLabel(avgRating)}
+                </span>
+                <span className="text-[11px] text-slate-500">مبني على {reviewsCount} تقييماً معتمداً</span>
+              </div>
+            </div>
 
-          <div className="bg-white dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-amber-200 dark:border-amber-800 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-            <ShieldCheck className="w-4 h-4" />
-            <span>موثوق بنسبة {product.seller.trustScore}%</span>
+            <div className="bg-white dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-amber-200 dark:border-amber-800 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+              <ShieldCheck className="w-4 h-4" />
+              <span>موثوق ومحمي بالضمان</span>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Reviews List */}
         <div className="space-y-3 text-xs">

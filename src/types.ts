@@ -141,10 +141,15 @@ export interface Message {
 export interface Conversation {
   id: string;
   userId?: string;
+  creatorId?: string;
+  creatorUsername?: string;
+  creatorDisplayName?: string;
+  creatorAvatar?: string;
   participantId: string;
   participantUsername: string;
   participantDisplayName: string;
   participantAvatar: string;
+  participants?: string[];
   isVerified: boolean;
   type: 'social' | 'market';
   relatedProductTitle?: string;

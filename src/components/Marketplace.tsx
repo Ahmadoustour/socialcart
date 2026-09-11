@@ -304,12 +304,30 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
                     {/* Seller Rating Badge (Clickable to view reviews) */}
                     <button
                       onClick={() => onViewProductReviews(product)}
-                      className="flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/80 text-amber-700 dark:text-amber-300 px-2 py-1 rounded-lg text-xs font-bold hover:bg-amber-100 transition"
-                      title="عرض تقييمات العملاء لهذا البائع"
+                      className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition ${
+                        (product.reviews && product.reviews.length > 0) || (product.seller.reviewsCount > 0 && product.seller.rating > 0)
+                          ? 'bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/80 text-amber-700 dark:text-amber-300 hover:bg-amber-100'
+                          : 'bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-200/80'
+                      }`}
+                      title="عرض تقييمات العملاء لهذا المنتج"
                     >
-                      <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                      <span>{product.seller.rating}</span>
-                      <span className="text-[10px] text-slate-400">({product.seller.reviewsCount})</span>
+                      {(product.reviews && product.reviews.length > 0) || (product.seller.reviewsCount > 0 && product.seller.rating > 0) ? (
+                        <>
+                          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                          <span className="font-bold">
+                            {product.reviews && product.reviews.length > 0
+                              ? (product.reviews.reduce((s, r) => s + Number(r.rating || 0), 0) / product.reviews.length).toFixed(1)
+                              : product.seller.rating}
+                          </span>
+                          <span className="text-[10px] opacity-70">
+                            ({product.reviews ? product.reviews.length : product.seller.reviewsCount})
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-[10px] font-medium">
+                          جديد (لا تقييمات)
+                        </span>
+                      )}
                     </button>
                   </div>
 
