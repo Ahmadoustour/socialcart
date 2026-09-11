@@ -8,7 +8,8 @@ import {
   ArrowLeft, 
   Lock, 
   Store, 
-  CheckCircle2 
+  CheckCircle2,
+  Play
 } from 'lucide-react';
 import { CartItem } from '../types';
 
@@ -82,15 +83,31 @@ export const CartView: React.FC<CartViewProps> = ({
                 {cartItems.map((item) => {
                   const itemSubtotal = item.product.price * item.quantity;
                   const coverImg = item.product.media?.[0]?.url || 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format&fit=crop&q=80';
+                  const isVideo = item.product.media?.[0]?.type === 'video' || /\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(coverImg);
 
                   return (
                     <div key={item.product.id} className="py-4 first:pt-0 last:pb-0 flex items-start gap-4">
                       {/* Product Thumbnail */}
-                      <img
-                        src={coverImg}
-                        alt={item.product.title}
-                        className="w-20 h-20 rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700 shrink-0"
-                      />
+                      {isVideo ? (
+                        <div className="w-20 h-20 rounded-xl overflow-hidden ring-1 ring-slate-200 dark:ring-slate-700 shrink-0 bg-slate-950 relative">
+                          <video
+                            src={`${coverImg}#t=0.001`}
+                            preload="metadata"
+                            muted
+                            playsInline
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-0 bg-black/25 flex items-center justify-center">
+                            <Play className="w-4 h-4 fill-white text-white" />
+                          </div>
+                        </div>
+                      ) : (
+                        <img
+                          src={coverImg}
+                          alt={item.product.title}
+                          className="w-20 h-20 rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700 shrink-0"
+                        />
+                      )}
 
                       {/* Info & Quantity controls */}
                       <div className="flex-1 min-w-0 space-y-1">

@@ -50,9 +50,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [otpCode, setOtpCode] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Bank testing simulation: Insufficient funds check
-  const [simulateInsufficientFunds, setSimulateInsufficientFunds] = useState(false);
-
   if (!isOpen) return null;
 
   const totalAmount = items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
@@ -104,8 +101,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           cardNumber: paymentChoice === 'saved' ? '4242424242424242' : newCardNumber,
           expiry: paymentChoice === 'saved' ? '12/28' : newExpiry,
           cvv: paymentChoice === 'saved' ? '123' : newCvv,
-          customerEmail: currentUser.email,
-          simulateDeclined: simulateInsufficientFunds || (newCardNumber && newCardNumber.replace(/\D/g, '').endsWith('0002'))
+          customerEmail: currentUser.email
         })
       });
 
@@ -335,24 +331,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </label>
                 </div>
               )}
-            </div>
-
-            {/* Bank Balance Scenario Tester */}
-            <div className="p-3 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl space-y-1.5">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={simulateInsufficientFunds}
-                  onChange={(e) => setSimulateInsufficientFunds(e.target.checked)}
-                  className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
-                />
-                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                  🧪 تجربة محاكاة بطاقة بدون رصيد كافٍ (رفض المعاملة من البنك)
-                </span>
-              </label>
-              <p className="text-[10px] text-slate-400 mr-6">
-                عند تفعيل هذا الخيار، سيتم محاكاة رفض البنك للشراء بسبب عدم توفر الرصيد كما في بوابات الدفع الحقيقية.
-              </p>
             </div>
 
             {cardError && (

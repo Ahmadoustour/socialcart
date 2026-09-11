@@ -9,7 +9,8 @@ import {
   CheckCircle2, 
   ExternalLink,
   Store,
-  MessageSquare
+  MessageSquare,
+  Play
 } from 'lucide-react';
 import { Order } from '../types';
 
@@ -82,11 +83,26 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({
               {/* Top Row: Product + Seller + Status */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
                 <div className="flex items-center gap-3">
-                  <img
-                    src={order.productImage}
-                    alt={order.productTitle}
-                    className="w-14 h-14 rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700 shrink-0"
-                  />
+                  {/\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(order.productImage) || order.productImage.includes('assets.mixkit.co') ? (
+                    <div className="w-14 h-14 rounded-xl overflow-hidden ring-1 ring-slate-200 dark:ring-slate-700 shrink-0 bg-slate-950 relative">
+                      <video
+                        src={`${order.productImage}#t=0.001`}
+                        preload="metadata"
+                        muted
+                        playsInline
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black/25 flex items-center justify-center">
+                        <Play className="w-3.5 h-3.5 fill-white text-white" />
+                      </div>
+                    </div>
+                  ) : (
+                    <img
+                      src={order.productImage}
+                      alt={order.productTitle}
+                      className="w-14 h-14 rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700 shrink-0"
+                    />
+                  )}
                   <div>
                     <span className="text-[10px] text-slate-400 font-bold block">
                       رقم الطلب: #{order.id} • {order.purchasedAt}

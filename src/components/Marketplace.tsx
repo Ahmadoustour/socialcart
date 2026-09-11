@@ -14,7 +14,9 @@ import {
   Eye,
   SlidersHorizontal,
   Play,
-  Maximize2
+  Maximize2,
+  Store,
+  Package
 } from 'lucide-react';
 import { Product, User, MediaItem } from '../types';
 import { MediaLightboxModal } from './MediaLightboxModal';
@@ -57,6 +59,11 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
   });
 
   const CATEGORIES = ['الكل', 'تصاميم وجرافيك', 'برمجة وتطوير', 'كتب وأدلة رقمية', 'قوالب وأدوات'];
+
+  const isVideoUrl = (url?: string) => {
+    if (!url) return false;
+    return /\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(url) || url.includes('assets.mixkit.co') || url.includes('/video/');
+  };
 
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
@@ -215,11 +222,28 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
                   className="relative aspect-[16/10] bg-slate-100 dark:bg-slate-800 overflow-hidden cursor-pointer group/cover"
                   title="انقر لعرض الصور ومعاينة المنتج بالحجم الكامل"
                 >
-                  <img
-                    src={mainMedia?.url || 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format&fit=crop&q=80'}
-                    alt={product.title}
-                    className="w-full h-full object-cover group-hover/cover:scale-105 transition duration-300"
-                  />
+                  {mainMedia?.type === 'video' || isVideoUrl(mainMedia?.url || '') ? (
+                    <div className="w-full h-full relative bg-slate-950">
+                      <video
+                        src={`${mainMedia?.url}#t=0.001`}
+                        preload="metadata"
+                        muted
+                        playsInline
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black/25 flex items-center justify-center group-hover/cover:bg-black/35 transition">
+                        <div className="w-10 h-10 rounded-full bg-slate-900/80 backdrop-blur-md text-white flex items-center justify-center shadow-lg border border-white/20 group-hover/cover:scale-110 transition">
+                          <Play className="w-4 h-4 fill-white translate-x-0.5" />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <img
+                      src={mainMedia?.url || 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format&fit=crop&q=80'}
+                      alt={product.title}
+                      className="w-full h-full object-cover group-hover/cover:scale-105 transition duration-300"
+                    />
+                  )}
 
                   {/* Hover Overlay Hint */}
                   <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/cover:opacity-100 transition-opacity duration-200 flex items-center justify-center pointer-events-none">
@@ -338,37 +362,65 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
                   </button>
                 </div>
 
-                {/* THE 2 DISTINCT BUTTONS REQUESTED BY USER */}
-                <div className="grid grid-cols-2 gap-2">
-                  
-                  {/* Button 1: Add to Cart */}
-                  <button
-                    onClick={() => onAddToCart(product)}
-                    className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition"
-                  >
-                    <ShoppingCart className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                    <span>+ للسلة</span>
-                  </button>
+                {/* THE 2 DISTINCT BUTTONS - WITH SELF PURCHASE RESTRICTION */}
+                {(() => {
+                  const isOwnProduct = Boolean(
+                    currentUser &&
+                    currentUser.id !== 'guest' &&
+                    (
+                      (product.sellerId && currentUser.id && product.sellerId === currentUser.id) ||
+                      (product.seller?.username && currentUser.username && product.seller.username.toLowerCase() === currentUser.username.toLowerCase())
+                    )
+                  );
 
-                  {/* Button 2: Direct Buy Now */}
-                  <button
-                    onClick={() => onDirectBuy(product)}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-600/20 transition"
-                  >
-                    <Zap className="w-4 h-4 fill-white" />
-                    <span>شراء فوري</span>
-                  </button>
+                  if (isOwnProduct) {
+                    return (
+                      <div className="space-y-2">
+                        <div className="w-full py-2.5 px-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold flex items-center justify-center gap-1.5 select-none shadow-xs">
+                          <Store className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                          <span>هذا منتجك المعروض (أنت البائع)</span>
+                        </div>
+                        <div className="w-full py-2 px-3 rounded-xl border border-dashed border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/30 dark:bg-indigo-950/20 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 flex items-center justify-center gap-1.5 select-none">
+                          <Package className="w-3.5 h-3.5" />
+                          <span>معروض للزبائن للبيع الفوري</span>
+                        </div>
+                      </div>
+                    );
+                  }
 
-                </div>
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* Button 1: Add to Cart */}
+                        <button
+                          onClick={() => onAddToCart(product)}
+                          className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        >
+                          <ShoppingCart className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <span>+ للسلة</span>
+                        </button>
 
-                {/* Contact Seller Inquiry */}
-                <button
-                  onClick={() => onOpenDirectChat(product.seller.username, product.seller.displayName, product.seller.avatar, product.title)}
-                  className="w-full py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/60 hover:bg-slate-100 dark:bg-slate-800/50 dark:hover:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center justify-center gap-1.5 transition"
-                >
-                  <MessageSquare className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>الاستفسار والمراسلة الفورية للبائع</span>
-                </button>
+                        {/* Button 2: Direct Buy Now */}
+                        <button
+                          onClick={() => onDirectBuy(product)}
+                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-600/20 transition cursor-pointer"
+                        >
+                          <Zap className="w-4 h-4 fill-white" />
+                          <span>شراء فوري</span>
+                        </button>
+                      </div>
+
+                      {/* Contact Seller Inquiry */}
+                      <button
+                        onClick={() => onOpenDirectChat(product.seller.username, product.seller.displayName, product.seller.avatar, product.title)}
+                        className="w-full py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/60 hover:bg-slate-100 dark:bg-slate-800/50 dark:hover:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center justify-center gap-1.5 transition cursor-pointer"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <span>الاستفسار والمراسلة الفورية للبائع</span>
+                      </button>
+                    </>
+                  );
+                })()}
 
               </div>
 

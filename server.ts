@@ -1112,15 +1112,8 @@ async function startServer() {
   });
 }
 
-// Only start standalone server if executed directly (e.g. `tsx server.ts` or `node dist/server.cjs`)
-// and NOT when imported as a serverless module in Vercel
-const isDirectExecution = process.argv[1] && (
-  process.argv[1].endsWith("server.ts") ||
-  process.argv[1].endsWith("server.cjs") ||
-  process.argv[1].endsWith("server.js")
-);
-
-if (!process.env.VERCEL && isDirectExecution) {
+// Start server when running directly in local / container / AI Studio environment
+if (!process.env.VERCEL) {
   startServer();
 }
 

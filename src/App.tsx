@@ -789,6 +789,21 @@ export default function App() {
 
   // 2. Marketplace Handlers
   const handleAddToCart = (product: Product) => {
+    // Prevent self-purchase: user cannot add their own products to cart
+    const isOwnProduct = Boolean(
+      currentUser && 
+      currentUser.id !== 'guest' && 
+      (
+        (product.sellerId && currentUser.id && product.sellerId === currentUser.id) ||
+        (product.seller?.username && currentUser.username && product.seller.username.toLowerCase() === currentUser.username.toLowerCase())
+      )
+    );
+
+    if (isOwnProduct) {
+      alert('⚠️ لا يمكنك إضافة منتجك المعروض للبيع إلى سلة الشراء (أنت صاحب هذا المنتج).');
+      return;
+    }
+
     setCartSeen(false); // Unseen items added to cart -> show badge until opened
     setCartItems(prev => {
       const existing = prev.find(item => item.product.id === product.id);
@@ -810,6 +825,21 @@ export default function App() {
 
   // Direct Buy Now: Opens Multi-step checkout directly for this single product
   const handleDirectBuy = (product: Product) => {
+    // Prevent self-purchase: user cannot buy their own product
+    const isOwnProduct = Boolean(
+      currentUser && 
+      currentUser.id !== 'guest' && 
+      (
+        (product.sellerId && currentUser.id && product.sellerId === currentUser.id) ||
+        (product.seller?.username && currentUser.username && product.seller.username.toLowerCase() === currentUser.username.toLowerCase())
+      )
+    );
+
+    if (isOwnProduct) {
+      alert('⚠️ لا يمكنك شراء منتجك الخاص المعروض للبيع (أنت صاحب هذا العرض).');
+      return;
+    }
+
     setCheckoutItems([{ product, quantity: 1 }]);
     setIsCheckoutOpen(true);
   };
@@ -952,11 +982,85 @@ export default function App() {
       body: JSON.stringify(newOrders)
     }).catch(err => console.log('Notice: using local storage fallback for orders:', err));
 
+    // ACCURATE SALES COUNT & REVENUE UPDATE FOR PURCHASED PRODUCTS
+    const boughtQtyMap = new Map<string, number>();
+    ordersData.items.forEach(it => {
+      boughtQtyMap.set(it.product.id, (boughtQtyMap.get(it.product.id) || 0) + it.quantity);
+    });
+
+    let updatedProductsToSync: Product[] = [];
+    setProducts(prev => {
+      const next = prev.map(p => {
+        const addQty = boughtQtyMap.get(p.id);
+        if (addQty) {
+          const updatedProd: Product = {
+            ...p,
+            salesCount: (p.salesCount || 0) + addQty,
+            seller: {
+              ...p.seller,
+              totalSales: (p.seller?.totalSales || 0) + addQty
+            }
+          };
+          updatedProductsToSync.push(updatedProd);
+          return updatedProd;
+        }
+        return p;
+      });
+      return next;
+    });
+
+    // Sync updated product sales to backend
+    for (const prod of updatedProductsToSync) {
+      fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(prod)
+      }).catch(err => console.log('Products sync error:', err));
+    }
+
+    // ACCURATE REVENUE & SELLER SALES UPDATE IF CURRENT USER IS THE SELLER
+    let userSalesAdded = 0;
+    const soldTitles: string[] = [];
+    ordersData.items.forEach(it => {
+      const isSeller = Boolean(
+        currentUser && currentUser.id !== 'guest' && (
+          (it.product.sellerId && currentUser.id && it.product.sellerId === currentUser.id) ||
+          (it.product.seller?.username && currentUser.username && it.product.seller.username.toLowerCase() === currentUser.username.toLowerCase())
+        )
+      );
+      if (isSeller) {
+        userSalesAdded += it.quantity;
+        soldTitles.push(it.product.title);
+      }
+    });
+
+    if (userSalesAdded > 0) {
+      setCurrentUser(prev => {
+        const updated = {
+          ...prev,
+          totalSales: (prev.totalSales || 0) + userSalesAdded
+        };
+        localStorage.setItem('socialcart_user', JSON.stringify(updated));
+        return updated;
+      });
+
+      const sellerNotif: NotificationItem = {
+        id: `notif_sale_${Date.now()}`,
+        title: '💰 مبيعات جديدة أضيفت لمحفظتك!',
+        message: `تم شراء (${userSalesAdded}) نسخة من منتجاتك (${soldTitles.join(', ')}). زاد إجمالي مبيعاتك وأرباحك بحماية الضمان Escrow.`,
+        type: 'market',
+        isRead: false,
+        createdAt: 'الآن',
+        linkTab: 'profile'
+      };
+      setNotifications(prev => [sellerNotif, ...prev]);
+    }
+
     // Remove bought items from cart
     const boughtIds = new Set(ordersData.items.map(i => i.product.id));
     setCartItems(prev => prev.filter(i => !boughtIds.has(i.product.id)));
 
-    // Add security notification
+    // Add security notification for the buyer
     const newNotif: NotificationItem = {
       id: `notif_${Date.now()}`,
       title: '🎉 اكتملت عملية الشراء بنجاح بحماية الضمان',
@@ -995,15 +1099,16 @@ export default function App() {
       productTitle: targetOrder.productTitle
     };
 
-    // Update product reviews & seller rating
+    // Update product reviews & seller rating mathematically
     let updatedProductsToSync: Product[] = [];
     setProducts(prev => {
       const next = prev.map(p => {
-        if (p.seller.username === targetOrder.sellerUsername) {
-          const updatedReviews = [newReview, ...p.reviews];
-          const avg = Number((updatedReviews.reduce((s, r) => s + r.rating, 0) / updatedReviews.length).toFixed(1));
+        if (p.seller.username.toLowerCase() === targetOrder.sellerUsername.toLowerCase()) {
+          const updatedReviews = [newReview, ...(p.reviews || [])];
+          const avg = Number((updatedReviews.reduce((s, r) => s + Number(r.rating || 0), 0) / updatedReviews.length).toFixed(1));
           const updatedProd = {
             ...p,
+            rating: avg,
             reviews: updatedReviews,
             seller: {
               ...p.seller,
@@ -1018,6 +1123,22 @@ export default function App() {
       });
       return next;
     });
+
+    // If target seller is the current logged in user, update their sellerRating & reviewsCount
+    if (currentUser && currentUser.username.toLowerCase() === targetOrder.sellerUsername.toLowerCase()) {
+      setCurrentUser(prev => {
+        const nextReviewsCount = (prev.sellerReviewsCount || 0) + 1;
+        const prevSum = (prev.sellerRating || 5) * (prev.sellerReviewsCount || 0);
+        const newAvg = Number(((prevSum + rating) / nextReviewsCount).toFixed(1));
+        const updated = {
+          ...prev,
+          sellerRating: newAvg,
+          sellerReviewsCount: nextReviewsCount
+        };
+        localStorage.setItem('socialcart_user', JSON.stringify(updated));
+        return updated;
+      });
+    }
 
     for (const prod of updatedProductsToSync) {
       try {

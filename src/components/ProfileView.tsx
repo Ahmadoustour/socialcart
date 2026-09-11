@@ -36,9 +36,11 @@ import {
   Heart,
   Share2,
   Tag,
-  ExternalLink
+  ExternalLink,
+  Play
 } from 'lucide-react';
-import { User, SavedCard, Post, Product } from '../types';
+import { User, SavedCard, Post, Product, MediaItem } from '../types';
+import { MediaLightboxModal } from './MediaLightboxModal';
 import { 
   validateCreditCardNumber, 
   validateCardExpiry, 
@@ -124,6 +126,31 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const totalCommentsReceived = myPosts.reduce((acc, p) => acc + ((p.comments && p.comments.length) || 0), 0);
   const totalProductSales = myProducts.reduce((acc, p) => acc + (p.salesCount || 0), 0);
   const totalRevenue = myProducts.reduce((acc, p) => acc + ((p.price || 0) * (p.salesCount || 0)), 0);
+
+  const productReviews = myProducts.flatMap(p => p.reviews || []);
+  const calculatedAvgRating = productReviews.length > 0
+    ? Number((productReviews.reduce((sum, r) => sum + r.rating, 0) / productReviews.length).toFixed(1))
+    : null;
+  const effectiveRating = calculatedAvgRating ?? currentUser.sellerRating ?? 5.0;
+  const effectiveReviewsCount = productReviews.length > 0 ? productReviews.length : (currentUser.sellerReviewsCount || 0);
+  const liveTotalSales = Math.max(currentUser.totalSales || 0, totalProductSales);
+
+  const isVideoUrl = (url?: string) => {
+    if (!url) return false;
+    return /\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(url) || url.includes('assets.mixkit.co') || url.includes('/video/');
+  };
+
+  const [lightboxState, setLightboxState] = useState<{
+    isOpen: boolean;
+    mediaList: MediaItem[];
+    initialIndex: number;
+    title?: string;
+    author?: { displayName: string; avatar: string; username?: string };
+  }>({
+    isOpen: false,
+    mediaList: [],
+    initialIndex: 0
+  });
 
   // Info Tab State
   const [displayName, setDisplayName] = useState(currentUser.displayName);
@@ -1052,24 +1079,53 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       </span>
                     </div>
 
-                    {/* Media Preview if available */}
+                    {/* Media Preview if available - Fixed dimensions and clean video/image preview */}
                     {post.media && post.media.length > 0 && (
-                      <div className="relative rounded-xl overflow-hidden h-36 bg-slate-100 dark:bg-slate-800">
-                        {post.media[0].type === 'video' ? (
-                          <div className="w-full h-full flex items-center justify-center bg-slate-900 text-white">
-                            <span className="text-xs flex items-center gap-1.5 font-bold">
-                              🎬 فيديو مرفق بالمنشور
+                      <div
+                        onClick={() => {
+                          setLightboxState({
+                            isOpen: true,
+                            mediaList: post.media,
+                            initialIndex: 0,
+                            title: post.title,
+                            author: {
+                              displayName: currentUser.displayName,
+                              avatar: currentUser.avatar,
+                              username: currentUser.username
+                            }
+                          });
+                        }}
+                        className="relative aspect-[16/10] w-full rounded-xl overflow-hidden bg-slate-950 cursor-pointer group select-none shadow-sm"
+                        title="انقر لتشغيل الفيديو أو معاينة الصورة بالحجم الكامل"
+                      >
+                        {post.media[0].type === 'video' || isVideoUrl(post.media[0].url) ? (
+                          <div className="w-full h-full relative">
+                            <video
+                              src={`${post.media[0].url}#t=0.001`}
+                              preload="metadata"
+                              muted
+                              playsInline
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/25 group-hover:bg-black/40 flex items-center justify-center transition">
+                              <div className="w-11 h-11 rounded-full bg-slate-900/80 backdrop-blur-md text-white flex items-center justify-center shadow-xl border border-white/20 group-hover:scale-110 transition">
+                                <Play className="w-5 h-5 fill-white translate-x-0.5" />
+                              </div>
+                            </div>
+                            <span className="absolute top-2.5 right-2.5 bg-slate-900/85 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 border border-white/10 shadow-sm">
+                              <Play className="w-3 h-3 fill-white" />
+                              <span>فيديو</span>
                             </span>
                           </div>
                         ) : (
                           <img
                             src={post.media[0].url}
                             alt={post.title}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                           />
                         )}
                         {post.media.length > 1 && (
-                          <span className="absolute bottom-2 left-2 bg-black/70 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                          <span className="absolute bottom-2.5 left-2.5 bg-black/75 backdrop-blur-xs text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-white/15">
                             +{post.media.length - 1} وسائط
                           </span>
                         )}
@@ -1223,22 +1279,70 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       </span>
                     </div>
 
-                    {/* Product Preview Image */}
-                    <div className="relative rounded-xl overflow-hidden h-36 bg-slate-100 dark:bg-slate-800">
+                    {/* Product Preview Image/Video with correct aspect ratio and full video support */}
+                    <div
+                      onClick={() => {
+                        if (prod.media && prod.media.length > 0) {
+                          setLightboxState({
+                            isOpen: true,
+                            mediaList: prod.media,
+                            initialIndex: 0,
+                            title: prod.title,
+                            author: {
+                              displayName: currentUser.displayName,
+                              avatar: currentUser.avatar,
+                              username: currentUser.username
+                            }
+                          });
+                        }
+                      }}
+                      className="relative aspect-[16/10] w-full rounded-xl overflow-hidden bg-slate-950 cursor-pointer group select-none shadow-sm"
+                      title="انقر لمعاينة الصور أو الفيديو بالحجم الكامل"
+                    >
                       {prod.media && prod.media.length > 0 ? (
-                        <img
-                          src={prod.media[0].url}
-                          alt={prod.title}
-                          className="w-full h-full object-cover"
-                        />
+                        prod.media[0].type === 'video' || isVideoUrl(prod.media[0].url) ? (
+                          <div className="w-full h-full relative">
+                            <video
+                              src={`${prod.media[0].url}#t=0.001`}
+                              preload="metadata"
+                              muted
+                              playsInline
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/25 group-hover:bg-black/40 flex items-center justify-center transition">
+                              <div className="w-11 h-11 rounded-full bg-slate-900/80 backdrop-blur-md text-white flex items-center justify-center shadow-xl border border-white/20 group-hover:scale-110 transition">
+                                <Play className="w-5 h-5 fill-white translate-x-0.5" />
+                              </div>
+                            </div>
+                            <span className="absolute top-2.5 right-2.5 bg-slate-900/85 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 border border-white/10 shadow-sm">
+                              <Play className="w-3 h-3 fill-white" />
+                              <span>فيديو</span>
+                            </span>
+                          </div>
+                        ) : (
+                          <img
+                            src={prod.media[0].url}
+                            alt={prod.title}
+                            className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                          />
+                        )
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-400">
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-400 gap-1.5">
                           <Package className="w-8 h-8" />
+                          <span className="text-[10px] font-bold">لا توجد وسائط</span>
                         </div>
                       )}
-                      <div className="absolute bottom-2 right-2 bg-slate-900/80 backdrop-blur-sm text-white px-2.5 py-1 rounded-lg text-xs font-black">
+
+                      {/* Overlaid Price */}
+                      <div className="absolute bottom-2.5 right-2.5 bg-slate-900/85 backdrop-blur-md text-white px-2.5 py-1 rounded-lg text-xs font-black border border-white/10 shadow-md">
                         ${prod.price} {prod.originalPrice && <span className="line-through text-slate-400 text-[10px] font-normal ml-1">${prod.originalPrice}</span>}
                       </div>
+
+                      {prod.media && prod.media.length > 1 && (
+                        <span className="absolute bottom-2.5 left-2.5 bg-black/75 backdrop-blur-xs text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-white/15">
+                          +{prod.media.length - 1} وسائط
+                        </span>
+                      )}
                     </div>
 
                     <h4 className="font-bold text-sm text-slate-900 dark:text-white line-clamp-1">
@@ -1877,31 +1981,89 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       {activeTab === 'stats' && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-6">
           <div>
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">إحصائيات المبيعات ومحفظة الضمان</h3>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">إحصائيات المبيعات والأرباح ومحفظة الضمان</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              متابعة تقييمات المشترين وإجمالي العمليات المنفذة
+              متابعة دقيقة لعدد عمليات الشراء الفعلي، إجمالي الأرباح، ومتوسط تقييمات المشترين بالنجوم
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 text-center space-y-1">
-              <span className="text-xs text-slate-400 font-bold block">إجمالي المبيعات</span>
-              <span className="text-2xl font-black text-slate-900 dark:text-white">{currentUser.totalSales} عملية</span>
+              <span className="text-xs text-slate-400 font-bold block">إجمالي عدد المبيعات المكتملة</span>
+              <span className="text-2xl font-black text-slate-900 dark:text-white">{liveTotalSales} عملية بيع</span>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold block">محدثة لحظياً لكل عملية</span>
+            </div>
+
+            <div className="bg-emerald-50 dark:bg-emerald-950/40 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800 text-center space-y-1">
+              <span className="text-xs text-emerald-700 dark:text-emerald-400 font-bold block">إجمالي الأرباح المحققة</span>
+              <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                ${totalRevenue.toLocaleString()}
+              </span>
+              <span className="text-[10px] text-emerald-700/80 dark:text-emerald-400/80 font-semibold block">سعر المنتجات × الكمية المباعة</span>
             </div>
 
             <div className="bg-amber-50 dark:bg-amber-950/40 p-4 rounded-2xl border border-amber-200 dark:border-amber-800 text-center space-y-1">
-              <span className="text-xs text-amber-700 dark:text-amber-400 font-bold block">متوسط تقييم المشترين</span>
-              {currentUser.sellerReviewsCount && currentUser.sellerReviewsCount > 0 ? (
-                <span className="text-2xl font-black text-amber-600 dark:text-amber-400 flex items-center justify-center gap-1">
-                  ⭐ {currentUser.sellerRating} / 5
-                </span>
+              <span className="text-xs text-amber-700 dark:text-amber-400 font-bold block">متوسط تقييم المشترين بالنجوم</span>
+              {effectiveReviewsCount > 0 ? (
+                <div className="space-y-0.5">
+                  <span className="text-2xl font-black text-amber-600 dark:text-amber-400 flex items-center justify-center gap-1">
+                    ⭐ {effectiveRating} / 5
+                  </span>
+                  <span className="text-[10px] text-amber-700/80 dark:text-amber-400/80 font-bold block">
+                    بناءً على {effectiveReviewsCount} تقييم حقيقي
+                  </span>
+                </div>
               ) : (
-                <span className="text-base font-bold text-slate-400 py-1 block">
+                <span className="text-sm font-bold text-slate-400 py-1 block">
                   لا توجد تقييمات بعد (0 تقييم)
                 </span>
               )}
             </div>
           </div>
+
+          {/* Product-by-product breakdown if products exist */}
+          {myProducts.length > 0 && (
+            <div className="space-y-3 pt-2">
+              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">تفاصيل مبيعات وأرباح منتجاتك المعروضة:</h4>
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
+                {myProducts.map(p => {
+                  const pSales = p.salesCount || 0;
+                  const pRev = (p.price || 0) * pSales;
+                  return (
+                    <div key={p.id} className="p-3 bg-slate-50/50 dark:bg-slate-800/30 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 overflow-hidden shrink-0 flex items-center justify-center">
+                          {p.media && p.media.length > 0 ? (
+                            p.media[0].type === 'video' || isVideoUrl(p.media[0].url) ? (
+                              <Play className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+                            ) : (
+                              <img src={p.media[0].url} alt={p.title} className="w-full h-full object-cover" />
+                            )
+                          ) : (
+                            <Package className="w-4 h-4 text-slate-400" />
+                          )}
+                        </div>
+                        <div>
+                          <span className="font-bold text-slate-900 dark:text-white block line-clamp-1">{p.title}</span>
+                          <span className="text-[10px] text-slate-400">${p.price} للنسخة</span>
+                        </div>
+                      </div>
+                      <div className="text-left flex items-center gap-4">
+                        <div className="text-center">
+                          <span className="text-[10px] text-slate-400 block">المبيعات</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200">{pSales}</span>
+                        </div>
+                        <div className="text-center">
+                          <span className="text-[10px] text-slate-400 block">الأرباح</span>
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400">${pRev.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900 rounded-2xl text-xs text-indigo-900 dark:text-indigo-200 space-y-2">
             <h4 className="font-bold flex items-center gap-1.5">
@@ -2505,6 +2667,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <span>تم تحديث صورتك الشخصية بنجاح في كامل المنصة!</span>
         </div>
       )}
+
+      {/* Media Lightbox Modal for Posts & Products in Profile */}
+      <MediaLightboxModal
+        isOpen={lightboxState.isOpen}
+        onClose={() => setLightboxState(prev => ({ ...prev, isOpen: false }))}
+        mediaList={lightboxState.mediaList}
+        initialIndex={lightboxState.initialIndex}
+        title={lightboxState.title}
+        author={lightboxState.author}
+      />
 
     </div>
   );
