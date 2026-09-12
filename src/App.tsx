@@ -155,12 +155,12 @@ function loadUserConversations(userId: string, username?: string): Conversation[
     } catch {}
   }
 
-  // If userList is empty, seed demo conversations with unread badges
+  // If userList is empty, seed demo conversations
   if (userList.length === 0) {
     userList = INITIAL_CONVERSATIONS.filter(c => !deletedSet.has(c.id)).map(c => ({
       ...c,
       userId,
-      unreadCount: c.unreadCount ?? 1,
+      unreadCount: 0,
       participants: Array.from(new Set([cleanUser || 'user', c.participantUsername.toLowerCase()]))
     }));
     try {
@@ -194,15 +194,11 @@ function loadUserConversations(userId: string, username?: string): Conversation[
               };
             }
 
-            // CRITICAL FIX: Determine recipient unread count correctly
+            // Determine recipient unread count correctly
             if (poolConv.unreadCountBy && typeof poolConv.unreadCountBy[cleanUser] === 'number') {
               adapted.unreadCount = poolConv.unreadCountBy[cleanUser];
-            } else if (adapted.messages && adapted.messages.length > 0) {
-              const lastMsg = adapted.messages[adapted.messages.length - 1];
-              if (lastMsg.senderUsername?.toLowerCase() !== cleanUser) {
-                // Incoming message from someone else: recipient has not read it yet!
-                adapted.unreadCount = adapted.unreadCount > 0 ? adapted.unreadCount : 1;
-              }
+            } else {
+              adapted.unreadCount = adapted.unreadCount || 0;
             }
 
             // Dynamically recalculate isMe for the currently viewing user
@@ -2294,8 +2290,8 @@ export default function App() {
         onSelectTab={handleSelectTab}
         onSwitchSection={handleSwitchSection}
         cartBadgeCount={cartBadgeCount}
-        unreadMessagesCount={unreadSocialMessagesCount > 0 ? unreadSocialMessagesCount : totalUnreadMessagesCount}
-        unreadMarketMessagesCount={unreadMarketMessagesCount > 0 ? unreadMarketMessagesCount : totalUnreadMessagesCount}
+        unreadMessagesCount={unreadSocialMessagesCount}
+        unreadMarketMessagesCount={unreadMarketMessagesCount}
         onOpenCreateModal={() => {
           if (!isLoggedIn) {
             setIsAuthModalOpen(true);

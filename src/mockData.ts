@@ -33,7 +33,7 @@ export const INITIAL_CONVERSATIONS: Conversation[] = [
     type: 'social',
     lastMessage: 'مرحباً بك في المجتمع! يسعدني تواصلك ونتطلع لمشاركاتك وإبداعاتك معنا.',
     lastMessageTime: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
-    unreadCount: 1,
+    unreadCount: 0,
     messages: [
       {
         id: 'msg_sarah_welcome_1',
@@ -58,7 +58,7 @@ export const INITIAL_CONVERSATIONS: Conversation[] = [
     relatedProductTitle: 'سماعات سوني اللاسلكية WH-1000XM5',
     lastMessage: 'أهلاً بك! المنتج متوفر حالياً مع ضمان سنتين وتوصيل مجاني خلال 24 ساعة.',
     lastMessageTime: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
-    unreadCount: 2,
+    unreadCount: 0,
     messages: [
       {
         id: 'msg_ahmed_inquiry_1',
