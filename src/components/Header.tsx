@@ -7,6 +7,7 @@ import {
   Menu, 
   X,
   Bell,
+  MessageSquare,
   LogIn,
   LogOut,
   User as UserIcon,
@@ -25,6 +26,7 @@ interface HeaderProps {
   onOpenAccountMenu: () => void;
   onLogout: () => void;
   unreadNotifsCount: number;
+  unreadMessagesCount?: number;
   darkMode: boolean;
   onToggleDarkMode: () => void;
   notifications: NotificationItem[];
@@ -43,6 +45,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAccountMenu,
   onLogout,
   unreadNotifsCount,
+  unreadMessagesCount = 0,
   darkMode,
   onToggleDarkMode,
   notifications,
@@ -57,11 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
       onOpenAuthModal();
       return;
     }
-    const nextState = !showNotifDropdown;
-    setShowNotifDropdown(nextState);
-    if (nextState && onMarkAllNotificationsRead) {
-      onMarkAllNotificationsRead();
-    }
+    setShowNotifDropdown(prev => !prev);
   };
 
   return (
@@ -147,14 +146,18 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="relative">
               <button
                 onClick={handleToggleNotifications}
-                className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition relative"
+                className={`p-2 rounded-xl transition relative ${
+                  showNotifDropdown
+                    ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40'
+                    : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
                 aria-label="الإشعارات والتنبيهات"
                 title="الإشعارات"
               >
                 <Bell className="w-5 h-5" />
-                {unreadNotifsCount > 0 && (
-                  <span className="absolute top-1.5 right-1.5 bg-rose-500 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold animate-pulse">
-                    {unreadNotifsCount}
+                {isLoggedIn && unreadNotifsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] min-w-[17px] h-[17px] px-1 rounded-full flex items-center justify-center font-bold animate-pulse shadow-sm">
+                    {unreadNotifsCount > 99 ? '+99' : unreadNotifsCount}
                   </span>
                 )}
               </button>
@@ -213,6 +216,33 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Direct Messages Button with received unread badge */}
+            <button
+              onClick={() => {
+                if (!isLoggedIn) {
+                  onOpenAuthModal();
+                } else {
+                  onSelectTab('messages');
+                }
+              }}
+              className={`p-2 rounded-xl transition relative ${
+                activeTab === 'messages'
+                  ? (activeSection === 'market' 
+                      ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40' 
+                      : 'text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40')
+                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+              aria-label="الرسائل والمحادثات"
+              title="الرسائل والمحادثات"
+            >
+              <MessageSquare className="w-5 h-5" />
+              {isLoggedIn && unreadMessagesCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] min-w-[17px] h-[17px] px-1 rounded-full flex items-center justify-center font-bold animate-pulse shadow-sm">
+                  {unreadMessagesCount > 99 ? '+99' : unreadMessagesCount}
+                </span>
+              )}
+            </button>
 
             {/* AUTH SECTION: LOGIN BUTTON OR ACCOUNT MENU */}
             {isLoggedIn ? (
@@ -316,6 +346,24 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Account Options in Mobile */}
             {isLoggedIn ? (
               <div className="space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  onClick={() => {
+                    onSelectTab('messages');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full text-right px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <span>الرسائل والمحادثات</span>
+                  </div>
+                  {unreadMessagesCount > 0 && (
+                    <span className="bg-rose-500 text-white text-[10px] min-w-[18px] h-[18px] px-1.5 rounded-full font-bold flex items-center justify-center shadow-xs">
+                      {unreadMessagesCount}
+                    </span>
+                  )}
+                </button>
+
                 <button
                   onClick={() => {
                     onSelectTab('profile');

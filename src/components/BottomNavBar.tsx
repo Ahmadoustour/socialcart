@@ -102,8 +102,8 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
               <div className="relative">
                 <MessageSquare className={`w-5 h-5 transition-transform ${activeTab === 'messages' ? 'scale-110 stroke-[2.5]' : ''}`} />
                 {isLoggedIn && unreadMessagesCount > 0 && (
-                  <span className="absolute -top-1.5 -right-2 bg-rose-500 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold animate-pulse">
-                    {unreadMessagesCount}
+                  <span className="absolute -top-1.5 -right-2 bg-rose-500 text-white text-[9px] min-w-[17px] h-[17px] px-1 rounded-full flex items-center justify-center font-bold animate-pulse shadow-xs">
+                    {unreadMessagesCount > 99 ? '+99' : unreadMessagesCount}
                   </span>
                 )}
               </div>
@@ -226,8 +226,8 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
               <div className="relative">
                 <MessageSquare className={`w-5 h-5 transition-transform ${activeTab === 'messages' ? 'scale-110 stroke-[2.5]' : ''}`} />
                 {isLoggedIn && marketUnread > 0 && (
-                  <span className="absolute -top-1.5 -right-2 bg-emerald-500 text-white text-[9px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center font-bold animate-pulse shadow-xs">
-                    {marketUnread}
+                  <span className="absolute -top-1.5 -right-2 bg-emerald-500 text-white text-[9px] min-w-[17px] h-[17px] px-1 rounded-full flex items-center justify-center font-bold animate-pulse shadow-xs">
+                    {marketUnread > 99 ? '+99' : marketUnread}
                   </span>
                 )}
               </div>

@@ -743,14 +743,8 @@ export default function App() {
   useEffect(() => {
     if (activeTab === 'cart') {
       setCartSeen(prev => (prev ? prev : true));
-    } else if (activeTab === 'messages') {
-      setConversations(prev => {
-        const hasUnread = prev.some(c => c.type === activeSection && c.unreadCount > 0);
-        if (!hasUnread) return prev;
-        return prev.map(c => c.type === activeSection ? { ...c, unreadCount: 0 } : c);
-      });
     }
-  }, [activeTab, activeSection]);
+  }, [activeTab]);
 
   // Derived counts with dynamic clearing when opened (and 0 when logged out)
   const unreadSocialMessagesCount = isLoggedIn 
@@ -758,6 +752,9 @@ export default function App() {
     : 0;
   const unreadMarketMessagesCount = isLoggedIn 
     ? conversations.filter(c => c.type === 'market').reduce((sum, c) => sum + c.unreadCount, 0) 
+    : 0;
+  const totalUnreadMessagesCount = isLoggedIn
+    ? (unreadSocialMessagesCount + unreadMarketMessagesCount)
     : 0;
   const unreadMessagesCount = activeSection === 'market' ? unreadMarketMessagesCount : unreadSocialMessagesCount;
 
@@ -1636,6 +1633,7 @@ export default function App() {
         onOpenAccountMenu={() => setIsAccountMenuOpen(true)}
         onLogout={handleLogout}
         unreadNotifsCount={unreadNotifsCount}
+        unreadMessagesCount={totalUnreadMessagesCount}
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode(!darkMode)}
         notifications={notifications}

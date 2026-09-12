@@ -11,11 +11,14 @@ import {
   CheckCheck,
   PackageCheck,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  Play,
+  Maximize2
 } from 'lucide-react';
 import { Conversation, User, MediaItem } from '../types';
 import { scanUrlOrFile } from '../utils/security';
 import { formatMessageTime, formatConversationTime } from '../utils/dateUtils';
+import { MediaLightboxModal } from './MediaLightboxModal';
 
 interface MessagesHubProps {
   conversations: Conversation[];
@@ -72,6 +75,34 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Fullscreen Media Lightbox Viewer Modal for chat images & videos
+  const [lightboxState, setLightboxState] = useState<{
+    isOpen: boolean;
+    mediaList: MediaItem[];
+    initialIndex: number;
+    title?: string;
+    author?: { displayName: string; avatar: string; username?: string };
+  }>({
+    isOpen: false,
+    mediaList: [],
+    initialIndex: 0
+  });
+
+  const handleOpenLightbox = (
+    mediaList: MediaItem[],
+    initialIndex: number,
+    title?: string,
+    author?: { displayName: string; avatar: string; username?: string }
+  ) => {
+    setLightboxState({
+      isOpen: true,
+      mediaList,
+      initialIndex,
+      title,
+      author
+    });
+  };
+
   // Periodic re-render every 30s so relative times ('الآن', 'منذ 5 دقائق') stay fresh
   const [, setTimeTick] = useState(0);
   useEffect(() => {
@@ -114,19 +145,7 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeConvId, conversations]);
 
-  // Mark all unread conversations of this section as read on mode change
-  const onMarkAllRef = useRef(onMarkAllConversationsRead);
-  useEffect(() => {
-    onMarkAllRef.current = onMarkAllConversationsRead;
-  }, [onMarkAllConversationsRead]);
-
-  useEffect(() => {
-    if (onMarkAllRef.current) {
-      onMarkAllRef.current(mode);
-    }
-  }, [mode]);
-
-  // Mark active conversation as read
+  // Mark active conversation as read when selected
   const onMarkReadRef = useRef(onMarkConversationRead);
   useEffect(() => {
     onMarkReadRef.current = onMarkConversationRead;
@@ -594,12 +613,56 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                             {/* Media items */}
                             {msg.media && msg.media.length > 0 && (
                               <div className="mt-2 space-y-2">
-                                {msg.media.map(m => (
-                                  <div key={m.id} className="rounded-xl overflow-hidden border border-white/20">
+                                {msg.media.map((m, mIdx) => (
+                                  <div 
+                                    key={m.id || mIdx} 
+                                    className="relative group rounded-xl overflow-hidden border border-white/20 cursor-pointer shadow-xs select-none"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenLightbox(
+                                        msg.media || [],
+                                        mIdx,
+                                        msg.text || (m.type === 'video' ? 'مقطع فيديو' : 'صورة مرفقة'),
+                                        {
+                                          displayName: bubbleUsername,
+                                          avatar: bubbleAvatar,
+                                          username: bubbleUsername
+                                        }
+                                      );
+                                    }}
+                                  >
                                     {m.type === 'video' ? (
-                                      <video src={m.url} controls className="w-full max-h-48 rounded-lg bg-black" />
+                                      <div className="relative bg-black group/vid">
+                                        <video 
+                                          src={m.url} 
+                                          className="w-full max-h-56 rounded-lg bg-black object-contain pointer-events-none" 
+                                          preload="metadata"
+                                        />
+                                        <div className="absolute inset-0 bg-black/35 flex items-center justify-center transition-all group-hover:bg-black/55">
+                                          <div className="w-11 h-11 rounded-full bg-white/90 text-slate-900 flex items-center justify-center shadow-lg transition-transform group-hover:scale-110">
+                                            <Play className="w-5 h-5 fill-slate-900 text-slate-900 mr-0.5" />
+                                          </div>
+                                        </div>
+                                        <div className="absolute bottom-2 left-2 bg-black/75 text-white text-[10px] px-2 py-0.5 rounded-md flex items-center gap-1 backdrop-blur-xs font-medium">
+                                          <Maximize2 className="w-3 h-3" />
+                                          <span>تشغيل وتكبير الفيديو</span>
+                                        </div>
+                                      </div>
                                     ) : (
-                                      <img src={m.url} alt={m.caption || ''} className="w-full max-h-48 object-cover" />
+                                      <div className="relative group/img overflow-hidden">
+                                        <img 
+                                          src={m.url} 
+                                          alt={m.caption || ''} 
+                                          className="w-full max-h-56 object-cover rounded-lg transition-transform duration-200 group-hover:scale-105" 
+                                          loading="lazy"
+                                        />
+                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-all flex items-center justify-center">
+                                          <span className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/75 text-white text-[10px] px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-md backdrop-blur-xs font-medium">
+                                            <Maximize2 className="w-3 h-3" />
+                                            <span>عرض بالحجم الكامل</span>
+                                          </span>
+                                        </div>
+                                      </div>
                                     )}
                                   </div>
                                 ))}
@@ -784,6 +847,16 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
           </div>
         </div>
       )}
+
+      {/* Fullscreen Media Lightbox Viewer Modal for Chat Media */}
+      <MediaLightboxModal
+        isOpen={lightboxState.isOpen}
+        onClose={() => setLightboxState(prev => ({ ...prev, isOpen: false }))}
+        mediaList={lightboxState.mediaList}
+        initialIndex={lightboxState.initialIndex}
+        title={lightboxState.title}
+        author={lightboxState.author}
+      />
 
     </div>
   );
