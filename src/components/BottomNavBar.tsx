@@ -102,7 +102,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
             >
               <div className="relative">
                 <MessageSquare className={`w-5 h-5 transition-transform ${activeTab === 'messages' ? 'scale-110 stroke-[2.5]' : ''}`} />
-                {isLoggedIn && unreadMessagesCount > 0 && (
+                {unreadMessagesCount > 0 && (
                   <span 
                     className="absolute -top-2 -right-2.5 bg-rose-500 text-white text-[10px] font-black min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center shadow-md ring-2 ring-white dark:ring-slate-900 leading-none pointer-events-none z-10 animate-pulse select-none"
                     title={`${unreadMessagesCount} أشخاص أرسلوا لك رسائل غير مقروءة`}
@@ -230,7 +230,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
             >
               <div className="relative">
                 <MessageSquare className={`w-5 h-5 transition-transform ${activeTab === 'messages' ? 'scale-110 stroke-[2.5]' : ''}`} />
-                {isLoggedIn && marketUnread > 0 && (
+                {marketUnread > 0 && (
                   <span 
                     className="absolute -top-2 -right-2.5 bg-rose-500 text-white text-[10px] font-black min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center shadow-md ring-2 ring-white dark:ring-slate-900 leading-none pointer-events-none z-10 animate-pulse select-none"
                     title={`${marketUnread} أشخاص أرسلوا لك استفسارات غير مقروءة`}

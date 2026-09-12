@@ -32,6 +32,7 @@ import {
   MediaItem,
   SellerReview
 } from './types';
+import { INITIAL_CONVERSATIONS } from './mockData';
 
 const GUEST_USER: User = {
   id: 'guest',
@@ -96,12 +97,34 @@ function loadUserOrders(userId: string, userEmail?: string): Order[] {
   return [];
 }
 
+function getDeletedConvIds(userId: string): Set<string> {
+  try {
+    const key = getUserStorageKey('socialcart_deleted_convs', userId);
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      const arr = JSON.parse(saved);
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch {}
+  return new Set();
+}
+
+function addDeletedConvId(userId: string, convId: string) {
+  try {
+    const key = getUserStorageKey('socialcart_deleted_convs', userId);
+    const existing = getDeletedConvIds(userId);
+    existing.add(convId);
+    localStorage.setItem(key, JSON.stringify(Array.from(existing)));
+  } catch {}
+}
+
 function loadUserConversations(userId: string, username?: string): Conversation[] {
   // Clean up dangerous legacy shared key so it can never leak to new accounts
   try {
     localStorage.removeItem('socialcart_conversations');
   } catch {}
 
+  const deletedSet = getDeletedConvIds(userId);
   const cleanUser = (username || '').replace(/^@/, '').toLowerCase().trim();
   const userKey = getUserStorageKey('socialcart_conversations', userId);
   let userList: Conversation[] = [];
@@ -114,6 +137,7 @@ function loadUserConversations(userId: string, username?: string): Conversation[
       if (Array.isArray(parsed)) {
         userList = parsed.filter(c => {
           if (!c || !c.id) return false;
+          if (deletedSet.has(c.id)) return false; // Strictly exclude deleted conversations!
           // STRICT PRIVACY ISOLATION:
           // A conversation belongs to this user ONLY if they are the owner, creator, or participant!
           if (cleanUser) {
@@ -129,6 +153,16 @@ function loadUserConversations(userId: string, username?: string): Conversation[
         });
       }
     } catch {}
+  } else {
+    // Seed initial conversations for testing and preview so unread counters are demonstrated
+    userList = INITIAL_CONVERSATIONS.filter(c => !deletedSet.has(c.id)).map(c => ({
+      ...c,
+      userId,
+      participants: Array.from(new Set([cleanUser || 'user', c.participantUsername.toLowerCase()]))
+    }));
+    try {
+      localStorage.setItem(userKey, JSON.stringify(userList));
+    } catch {}
   }
 
   // 2. Also check shared conversation registry for cross-user routing
@@ -138,7 +172,7 @@ function loadUserConversations(userId: string, username?: string): Conversation[
       const parsedShared: Conversation[] = JSON.parse(shared);
       if (Array.isArray(parsedShared)) {
         parsedShared.forEach(poolConv => {
-          if (!poolConv || !poolConv.id) return;
+          if (!poolConv || !poolConv.id || deletedSet.has(poolConv.id)) return; // Strictly exclude deleted!
           const participants = (poolConv.participants || [
             poolConv.creatorUsername || '',
             poolConv.participantUsername || ''
@@ -167,7 +201,7 @@ function loadUserConversations(userId: string, username?: string): Conversation[
     }
   } catch {}
 
-  return userList;
+  return userList.filter(c => !deletedSet.has(c.id));
 }
 
 function loadUserNotifications(userId: string): NotificationItem[] {
@@ -807,10 +841,9 @@ export default function App() {
     }
   }, [activeTab]);
 
-  // Derived counts with dynamic clearing when opened (and 0 when logged out)
+  // Derived counts with dynamic clearing when opened
   // Explicit requirement: The bottom tab badge displays the count of distinct PEOPLE (unique conversations) who messaged me with unread messages
   const unreadSocialSendersCount = useMemo(() => {
-    if (!isLoggedIn) return 0;
     const senders = new Set<string>();
     conversations.forEach(c => {
       if (c.type === 'social' && (c.unreadCount || 0) > 0) {
@@ -819,10 +852,9 @@ export default function App() {
       }
     });
     return senders.size;
-  }, [isLoggedIn, conversations]);
+  }, [conversations]);
 
   const unreadMarketSendersCount = useMemo(() => {
-    if (!isLoggedIn) return 0;
     const senders = new Set<string>();
     conversations.forEach(c => {
       if (c.type === 'market' && (c.unreadCount || 0) > 0) {
@@ -831,10 +863,9 @@ export default function App() {
       }
     });
     return senders.size;
-  }, [isLoggedIn, conversations]);
+  }, [conversations]);
 
   const totalUnreadSendersCount = useMemo(() => {
-    if (!isLoggedIn) return 0;
     const senders = new Set<string>();
     conversations.forEach(c => {
       if ((c.unreadCount || 0) > 0) {
@@ -843,7 +874,7 @@ export default function App() {
       }
     });
     return senders.size;
-  }, [isLoggedIn, conversations]);
+  }, [conversations]);
 
   const unreadSendersCount = activeSection === 'market' ? unreadMarketSendersCount : unreadSocialSendersCount;
 
@@ -970,6 +1001,42 @@ export default function App() {
         });
       } catch (err) {
         console.error('Failed to persist comment to server:', err);
+      }
+    }
+  };
+
+  const handleDeleteComment = async (postId: string, commentId: string) => {
+    let targetPost: Post | null = null;
+    setPosts(prev => prev.map(p => {
+      if (p.id === postId) {
+        const updated = {
+          ...p,
+          comments: (p.comments || []).filter(c => c.id !== commentId)
+        };
+        targetPost = updated;
+        return updated;
+      }
+      return p;
+    }));
+
+    // Server-side deletion endpoint
+    try {
+      await fetch(`/api/posts/${postId}/comments/${commentId}`, {
+        method: 'DELETE'
+      });
+    } catch (err) {
+      console.error('Failed to delete comment via endpoint:', err);
+    }
+
+    if (targetPost) {
+      try {
+        await fetch('/api/posts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(targetPost)
+        });
+      } catch (err) {
+        console.error('Failed to sync post after comment deletion:', err);
       }
     }
   };
@@ -1404,6 +1471,55 @@ export default function App() {
     }
   };
 
+  const handleDeleteReview = async (productId: string, reviewId: string) => {
+    let updatedProductsToSync: Product[] = [];
+    setProducts(prev => {
+      const next = prev.map(p => {
+        if (p.id === productId) {
+          const nextReviews = (p.reviews || []).filter(r => r.id !== reviewId);
+          const avg = nextReviews.length > 0
+            ? Number((nextReviews.reduce((s, r) => s + Number(r.rating || 0), 0) / nextReviews.length).toFixed(1))
+            : 0;
+          const updatedProd = {
+            ...p,
+            rating: avg,
+            reviews: nextReviews,
+            seller: {
+              ...p.seller,
+              rating: avg,
+              reviewsCount: nextReviews.length
+            }
+          };
+          updatedProductsToSync.push(updatedProd);
+          return updatedProd;
+        }
+        return p;
+      });
+      return next;
+    });
+
+    // Server-side deletion endpoint
+    try {
+      await fetch(`/api/products/${productId}/reviews/${reviewId}`, {
+        method: 'DELETE'
+      });
+    } catch (err) {
+      console.error('Failed to delete review via endpoint:', err);
+    }
+
+    for (const prod of updatedProductsToSync) {
+      try {
+        await fetch('/api/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(prod)
+        });
+      } catch (err) {
+        console.error('Failed to sync updated product review deletion to server:', err);
+      }
+    }
+  };
+
   // 6. Report and Refund Submission
   const handleReportSubmit = (data: {
     targetType: string;
@@ -1459,6 +1575,10 @@ export default function App() {
   };
 
   const handleDeleteConversation = (conversationId: string) => {
+    // 1. Mark as permanently deleted for this user
+    addDeletedConvId(currentUser.id, conversationId);
+
+    // 2. Remove from active state and persist to user storage
     setConversations(prev => {
       const filtered = prev.filter(c => c.id !== conversationId);
       const userKey = getUserStorageKey('socialcart_conversations', currentUser.id);
@@ -1466,6 +1586,19 @@ export default function App() {
       return filtered;
     });
 
+    // 3. Remove from shared pool to prevent re-injection on reload
+    try {
+      const existingPoolRaw = localStorage.getItem('socialcart_shared_conversations_pool');
+      if (existingPoolRaw) {
+        const existingPool: Conversation[] = JSON.parse(existingPoolRaw);
+        if (Array.isArray(existingPool)) {
+          const filteredPool = existingPool.filter(c => c && c.id !== conversationId);
+          localStorage.setItem('socialcart_shared_conversations_pool', JSON.stringify(filteredPool));
+        }
+      }
+    } catch {}
+
+    // 4. Reset selected conversation pointers
     if (selectedMarketConvId === conversationId) {
       setSelectedMarketConvId(null);
     }
@@ -1473,8 +1606,22 @@ export default function App() {
       setSelectedSocialConvId(null);
     }
 
-    // Also remove notifications related to this deleted conversation
+    // 5. Also remove notifications related to this deleted conversation
     setNotifications(prev => prev.filter(n => n.targetConvId !== conversationId));
+  };
+
+  const handleToggleConversationUnread = (conversationId: string) => {
+    setConversations(prev => prev.map(c => {
+      if (c.id === conversationId) {
+        const currentUnread = c.unreadCount || 0;
+        const newUnread = currentUnread > 0 ? 0 : 1;
+        return {
+          ...c,
+          unreadCount: newUnread
+        };
+      }
+      return c;
+    }));
   };
 
   const handleStartNewConversation = (
@@ -1799,6 +1946,7 @@ export default function App() {
               }
               handleAddComment(id, text);
             }}
+            onDeleteComment={handleDeleteComment}
             onOpenCreatePost={() => {
               if (!isLoggedIn) {
                 setIsAuthModalOpen(true);
@@ -1874,6 +2022,7 @@ export default function App() {
               }}
               onMarkConversationRead={handleMarkConversationRead}
               onMarkAllConversationsRead={handleMarkAllConversationsRead}
+              onToggleUnread={handleToggleConversationUnread}
               onDeleteConversation={handleDeleteConversation}
               onNavigateToMarket={() => {
                 setActiveSection('market');
@@ -2135,6 +2284,8 @@ export default function App() {
         isOpen={!!reviewsTargetProduct}
         onClose={() => setReviewsTargetProduct(null)}
         product={reviewsTargetProduct}
+        currentUser={currentUser}
+        onDeleteReview={handleDeleteReview}
         onOpenDirectChat={handleOpenDirectChat}
       />
 

@@ -1,19 +1,23 @@
 import React from 'react';
-import { X, Star, BadgeCheck, ShieldCheck, MessageSquare } from 'lucide-react';
-import { Product } from '../types';
+import { X, Star, BadgeCheck, ShieldCheck, MessageSquare, Trash2 } from 'lucide-react';
+import { Product, User } from '../types';
 
 interface ProductReviewsModalProps {
   isOpen: boolean;
   onClose: () => void;
   product: Product | null;
   onOpenDirectChat?: (username: string, displayName: string, avatar: string, productTitle?: string) => void;
+  currentUser?: User;
+  onDeleteReview?: (productId: string, reviewId: string) => void;
 }
 
 export const ProductReviewsModal: React.FC<ProductReviewsModalProps> = ({
   isOpen,
   onClose,
   product,
-  onOpenDirectChat
+  onOpenDirectChat,
+  currentUser,
+  onDeleteReview
 }) => {
   if (!isOpen || !product) return null;
 
@@ -109,43 +113,64 @@ export const ProductReviewsModal: React.FC<ProductReviewsModalProps> = ({
         {/* Reviews List */}
         <div className="space-y-3 text-xs">
           {product.reviews && product.reviews.length > 0 ? (
-            product.reviews.map((rev) => (
-              <div 
-                key={rev.id}
-                className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/70 rounded-2xl space-y-1.5"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <img
-                      src={rev.buyerAvatar}
-                      alt={rev.buyerUsername}
-                      className="w-7 h-7 rounded-lg object-cover ring-1 ring-slate-200 dark:ring-slate-700"
-                    />
-                    <div>
-                      <span className="font-bold text-slate-800 dark:text-slate-200 block">
-                        @{rev.buyerUsername}
-                      </span>
-                      <span className="text-[10px] text-slate-400">{rev.date}</span>
+            product.reviews.map((rev) => {
+              const canDeleteReview = currentUser && currentUser.id !== 'guest' && (
+                (rev.buyerUsername && currentUser.username && rev.buyerUsername.toLowerCase() === currentUser.username.toLowerCase()) ||
+                (product.seller && product.seller.username && currentUser.username && product.seller.username.toLowerCase() === currentUser.username.toLowerCase()) ||
+                (product.sellerId && currentUser.id && product.sellerId === currentUser.id)
+              );
+
+              return (
+                <div 
+                  key={rev.id}
+                  className="p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/70 rounded-2xl space-y-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <img
+                        src={rev.buyerAvatar}
+                        alt={rev.buyerUsername}
+                        className="w-7 h-7 rounded-lg object-cover ring-1 ring-slate-200 dark:ring-slate-700"
+                      />
+                      <div>
+                        <span className="font-bold text-slate-800 dark:text-slate-200 block">
+                          @{rev.buyerUsername}
+                        </span>
+                        <span className="text-[10px] text-slate-400">{rev.date}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-0.5">
+                        {[1, 2, 3, 4, 5].map((s) => (
+                          <Star
+                            key={s}
+                            className={`w-3 h-3 ${
+                              s <= rev.rating ? 'fill-amber-400 text-amber-400' : 'text-slate-300'
+                            }`}
+                          />
+                        ))}
+                      </div>
+
+                      {canDeleteReview && onDeleteReview && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteReview(product.id, rev.id)}
+                          className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 p-1 rounded-md transition"
+                          title="حذف هذا التقييم"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-0.5">
-                    {[1, 2, 3, 4, 5].map((s) => (
-                      <Star
-                        key={s}
-                        className={`w-3 h-3 ${
-                          s <= rev.rating ? 'fill-amber-400 text-amber-400' : 'text-slate-300'
-                        }`}
-                      />
-                    ))}
-                  </div>
+                  <p className="text-slate-700 dark:text-slate-300 text-[11px] leading-relaxed pt-1">
+                    "{rev.comment}"
+                  </p>
                 </div>
-
-                <p className="text-slate-700 dark:text-slate-300 text-[11px] leading-relaxed pt-1">
-                  "{rev.comment}"
-                </p>
-              </div>
-            ))
+              );
+            })
           ) : (
             <p className="text-center text-slate-400 py-6">لا توجد مراجعات مكتوبة بعد لهذا المنتج.</p>
           )}

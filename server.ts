@@ -936,6 +936,23 @@ app.delete("/api/posts/:id", (req, res) => {
   }
 });
 
+app.delete("/api/posts/:postId/comments/:commentId", (req, res) => {
+  try {
+    const { postId, commentId } = req.params;
+    let posts = readJsonFile<any[]>(POSTS_FILE, []);
+    const postIndex = posts.findIndex(p => p.id === postId);
+    if (postIndex >= 0) {
+      const currentComments = Array.isArray(posts[postIndex].comments) ? posts[postIndex].comments : [];
+      posts[postIndex].comments = currentComments.filter((c: any) => c.id !== commentId);
+      writeJsonFile(POSTS_FILE, posts);
+      return res.json({ success: true, postId, commentId, post: posts[postIndex] });
+    }
+    res.status(404).json({ error: "Post not found" });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to delete comment" });
+  }
+});
+
 // 7. Products Persistence APIs
 app.get("/api/products", (req, res) => {
   const products = readJsonFile<any[]>(PRODUCTS_FILE, []);
@@ -971,6 +988,33 @@ app.delete("/api/products/:id", (req, res) => {
     res.json({ success: true, id });
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Failed to delete product" });
+  }
+});
+
+app.delete("/api/products/:productId/reviews/:reviewId", (req, res) => {
+  try {
+    const { productId, reviewId } = req.params;
+    let products = readJsonFile<any[]>(PRODUCTS_FILE, []);
+    const prodIndex = products.findIndex(p => p.id === productId);
+    if (prodIndex >= 0) {
+      const currentReviews = Array.isArray(products[prodIndex].reviews) ? products[prodIndex].reviews : [];
+      const updatedReviews = currentReviews.filter((r: any) => r.id !== reviewId);
+      const reviewsCount = updatedReviews.length;
+      const avgRating = reviewsCount > 0
+        ? Number((updatedReviews.reduce((acc: number, r: any) => acc + Number(r.rating || 0), 0) / reviewsCount).toFixed(1))
+        : 0;
+      
+      products[prodIndex].reviews = updatedReviews;
+      if (products[prodIndex].seller) {
+        products[prodIndex].seller.reviewsCount = reviewsCount;
+        products[prodIndex].seller.rating = avgRating;
+      }
+      writeJsonFile(PRODUCTS_FILE, products);
+      return res.json({ success: true, productId, reviewId, product: products[prodIndex] });
+    }
+    res.status(404).json({ error: "Product not found" });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to delete review" });
   }
 });
 

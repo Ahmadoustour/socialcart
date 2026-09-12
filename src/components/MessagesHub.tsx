@@ -14,7 +14,8 @@ import {
   ArrowRight,
   Play,
   Maximize2,
-  Trash2
+  Trash2,
+  Mail
 } from 'lucide-react';
 import { Conversation, User, MediaItem } from '../types';
 import { scanUrlOrFile } from '../utils/security';
@@ -34,6 +35,7 @@ interface MessagesHubProps {
   onMarkConversationRead?: (conversationId: string) => void;
   onMarkAllConversationsRead?: (type?: 'social' | 'market') => void;
   onDeleteConversation?: (conversationId: string) => void;
+  onToggleUnread?: (conversationId: string) => void;
   onNavigateToMarket?: () => void;
   onNavigateToFeed?: () => void;
 }
@@ -50,6 +52,7 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
   onMarkConversationRead,
   onMarkAllConversationsRead,
   onDeleteConversation,
+  onToggleUnread,
   onNavigateToMarket,
   onNavigateToFeed
 }) => {
@@ -501,7 +504,26 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                         }`}>
                           {conv.lastMessage}
                         </p>
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex items-center gap-1 shrink-0">
+                          {/* Toggle unread status button */}
+                          {onToggleUnread && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleUnread(conv.id);
+                              }}
+                              className={`p-1 rounded-lg transition ${
+                                hasUnread
+                                  ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100'
+                                  : 'text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                              }`}
+                              title={hasUnread ? 'تحديد كمقروء' : 'تحديد كغير مقروء'}
+                            >
+                              <Mail className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
                           {/* Delete conversation button */}
                           <button
                             type="button"
@@ -598,6 +620,19 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                       </span>
                     ) : null;
                   })()}
+                  {onToggleUnread && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onToggleUnread(activeConversation.id);
+                        handleBackToList();
+                      }}
+                      className="p-2 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition"
+                      title="تحديد كغير مقروء والعودة للقائمة"
+                    >
+                      <Mail className="w-4 h-4" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {

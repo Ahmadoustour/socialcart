@@ -11,7 +11,8 @@ import {
   Check,
   Sparkles,
   Play,
-  Maximize2
+  Maximize2,
+  Trash2
 } from 'lucide-react';
 import { Post, User, MediaItem } from '../types';
 import { MediaLightboxModal } from './MediaLightboxModal';
@@ -21,6 +22,7 @@ interface SocialFeedProps {
   currentUser: User;
   onLikePost: (postId: string) => void;
   onAddComment: (postId: string, text: string) => void;
+  onDeleteComment?: (postId: string, commentId: string) => void;
   onOpenCreatePost: () => void;
   onOpenReportModal: (targetType: 'post' | 'product', targetId: string, targetName: string) => void;
   onOpenDirectChat: (username: string, displayName: string, avatar: string) => void;
@@ -31,6 +33,7 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
   currentUser,
   onLikePost,
   onAddComment,
+  onDeleteComment,
   onOpenCreatePost,
   onOpenReportModal,
   onOpenDirectChat
@@ -426,34 +429,55 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
                 {/* Comments list */}
                 <div className="space-y-2">
                   {post.comments && post.comments.length > 0 ? (
-                    post.comments.map(comment => (
-                      <div 
-                        key={comment.id}
-                        className="bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 flex items-start gap-2.5"
-                      >
-                        <img
-                          src={comment.userAvatar}
-                          alt={comment.username}
-                          onClick={() => onOpenDirectChat(comment.username, comment.username, comment.userAvatar)}
-                          className="w-7 h-7 rounded-lg object-cover ring-1 ring-slate-200 dark:ring-slate-700 mt-0.5 cursor-pointer hover:opacity-80 transition"
-                          title={`مراسلة @${comment.username}`}
-                        />
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between">
-                            <span 
-                              onClick={() => onOpenDirectChat(comment.username, comment.username, comment.userAvatar)}
-                              className="font-bold text-[11px] text-slate-800 dark:text-slate-200 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition"
-                            >
-                              @{comment.username}
-                            </span>
-                            <span className="text-[10px] text-slate-400">{comment.createdAt}</span>
+                    post.comments.map(comment => {
+                      const canDelete = currentUser && (
+                        (comment.username && currentUser.username && comment.username.toLowerCase() === currentUser.username.toLowerCase()) ||
+                        (comment.userId && currentUser.id && comment.userId === currentUser.id) ||
+                        (post.author && post.author.username && currentUser.username && post.author.username.toLowerCase() === currentUser.username.toLowerCase()) ||
+                        (post.userId && currentUser.id && post.userId === currentUser.id)
+                      );
+
+                      return (
+                        <div 
+                          key={comment.id}
+                          className="bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 flex items-start gap-2.5 group"
+                        >
+                          <img
+                            src={comment.userAvatar}
+                            alt={comment.username}
+                            onClick={() => onOpenDirectChat(comment.username, comment.username, comment.userAvatar)}
+                            className="w-7 h-7 rounded-lg object-cover ring-1 ring-slate-200 dark:ring-slate-700 mt-0.5 cursor-pointer hover:opacity-80 transition shrink-0"
+                            title={`مراسلة @${comment.username}`}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <span 
+                                onClick={() => onOpenDirectChat(comment.username, comment.username, comment.userAvatar)}
+                                className="font-bold text-[11px] text-slate-800 dark:text-slate-200 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition"
+                              >
+                                @{comment.username}
+                              </span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="text-[10px] text-slate-400">{comment.createdAt}</span>
+                                {canDelete && onDeleteComment && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onDeleteComment(post.id, comment.id)}
+                                    className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 p-1 rounded-md transition"
+                                    title="حذف هذا التعليق"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 whitespace-pre-wrap break-words">
+                              {comment.text}
+                            </p>
                           </div>
-                          <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
-                            {comment.text}
-                          </p>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <p className="text-center text-[11px] text-slate-400 py-1">
                       كن أول من يترك تعليقاً على هذا المنشور!
