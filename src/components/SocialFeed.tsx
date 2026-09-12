@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Heart, 
   MessageCircle, 
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Post, User, MediaItem } from '../types';
 import { MediaLightboxModal } from './MediaLightboxModal';
+import { formatRelativeTime } from '../utils/dateUtils';
 
 interface SocialFeedProps {
   posts: Post[];
@@ -42,6 +43,15 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
   const [copiedPostId, setCopiedPostId] = useState<string | null>(null);
   const [activeMediaIndex, setActiveMediaIndex] = useState<Record<string, number>>({});
   
+  // Auto-refresh relative times ('منذ ساعة', 'منذ 6 ساعات', etc.) every 30 seconds
+  const [, setTimeTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeTick(t => t + 1);
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Lightbox Modal state for full screen image/video viewing
   const [lightboxState, setLightboxState] = useState<{
     isOpen: boolean;
@@ -195,7 +205,7 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
                         @{post.author?.username || 'user'}
                       </span>
                       <span>•</span>
-                      <span>{post.createdAt || 'الآن'}</span>
+                      <span>{formatRelativeTime(post.createdAt, post.id)}</span>
                     </div>
                   </div>
                 </div>
@@ -457,7 +467,7 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
                                 @{comment.username}
                               </span>
                               <div className="flex items-center gap-1.5 shrink-0">
-                                <span className="text-[10px] text-slate-400">{comment.createdAt}</span>
+                                <span className="text-[10px] text-slate-400">{formatRelativeTime(comment.createdAt, comment.id)}</span>
                                 {canDelete && onDeleteComment && (
                                   <button
                                     type="button"

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   PackageCheck, 
   Download, 
@@ -13,6 +13,7 @@ import {
   Play
 } from 'lucide-react';
 import { Order } from '../types';
+import { formatRelativeTime } from '../utils/dateUtils';
 
 interface PurchasesViewProps {
   orders: Order[];
@@ -31,6 +32,15 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({
   onExploreMarket,
   onOpenDirectChat
 }) => {
+  // Auto-refresh relative timestamps periodically
+  const [, setTimeTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeTick(t => t + 1);
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <div className="max-w-4xl mx-auto pb-16 animate-fadeIn">
       
@@ -105,7 +115,7 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({
                   )}
                   <div>
                     <span className="text-[10px] text-slate-400 font-bold block">
-                      رقم الطلب: #{order.id} • {order.purchasedAt}
+                      رقم الطلب: #{order.id} • {formatRelativeTime(order.purchasedAt, order.id)}
                     </span>
                     <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-snug">
                       {order.productTitle}

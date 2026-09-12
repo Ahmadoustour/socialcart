@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Globe, 
   Store, 
@@ -13,6 +13,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { User, NotificationItem } from '../types';
+import { formatRelativeTime } from '../utils/dateUtils';
 
 interface HeaderProps {
   activeSection: 'social' | 'market';
@@ -53,6 +54,15 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+
+  // Auto-refresh relative time labels periodically
+  const [, setTimeTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeTick(t => t + 1);
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleToggleNotifications = () => {
     if (!isLoggedIn) {
@@ -211,7 +221,9 @@ export const Header: React.FC<HeaderProps> = ({
                             )}
                           </div>
                           <p className="text-[11px] leading-snug">{notif.message}</p>
-                          <span className="text-[9px] text-slate-400 dark:text-slate-500 block mt-1">{notif.createdAt}</span>
+                          <span className="text-[9px] text-slate-400 dark:text-slate-500 block mt-1">
+                            {formatRelativeTime(notif.createdAt, notif.id)}
+                          </span>
                         </div>
                       ))
                     )}

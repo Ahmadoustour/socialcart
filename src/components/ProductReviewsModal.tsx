@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Star, BadgeCheck, ShieldCheck, MessageSquare, Trash2 } from 'lucide-react';
 import { Product, User } from '../types';
+import { formatRelativeTime } from '../utils/dateUtils';
 
 interface ProductReviewsModalProps {
   isOpen: boolean;
@@ -136,7 +137,7 @@ export const ProductReviewsModal: React.FC<ProductReviewsModalProps> = ({
                         <span className="font-bold text-slate-800 dark:text-slate-200 block">
                           @{rev.buyerUsername}
                         </span>
-                        <span className="text-[10px] text-slate-400">{rev.date}</span>
+                        <span className="text-[10px] text-slate-400">{formatRelativeTime(rev.date, rev.id)}</span>
                       </div>
                     </div>
 

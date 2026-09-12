@@ -1059,7 +1059,7 @@ export default function App() {
       username: currentUser.username,
       userAvatar: currentUser.avatar,
       text,
-      createdAt: 'الآن'
+      createdAt: new Date().toISOString()
     };
 
     let targetPost: Post | null = null;
@@ -1160,7 +1160,7 @@ export default function App() {
       likedByMe: false,
       sharesCount: 0,
       comments: [],
-      createdAt: 'الآن',
+      createdAt: new Date().toISOString(),
       tags
     };
 
@@ -1384,7 +1384,7 @@ export default function App() {
       unitPrice: item.product.price,
       quantity: item.quantity,
       totalPaid: item.product.price * item.quantity, // CRITICAL: Fixes user bug #3
-      purchasedAt: new Date().toLocaleDateString('ar-EG'),
+      purchasedAt: new Date().toISOString(),
       downloadUrl: item.product.fileUrl,
       isEscrowReleased: false,
       escrowReleaseDate: 'متبقي 14 يوماً بحماية الضمان Escrow',
@@ -1470,7 +1470,7 @@ export default function App() {
         message: `تم شراء (${userSalesAdded}) نسخة من منتجاتك (${soldTitles.join(', ')}). زاد إجمالي مبيعاتك وأرباحك بحماية الضمان Escrow.`,
         type: 'market',
         isRead: false,
-        createdAt: 'الآن',
+        createdAt: new Date().toISOString(),
         linkTab: 'profile'
       };
       setNotifications(prev => [sellerNotif, ...prev]);
@@ -1487,7 +1487,7 @@ export default function App() {
       message: `تم تأكيد دفع $${ordersData.totalPaid} عبر ${ordersData.paymentMethod}. ملفاتك متاحة الآن في صفحة مشترياتي.`,
       type: 'market',
       isRead: false,
-      createdAt: 'الآن',
+      createdAt: new Date().toISOString(),
       linkTab: 'purchases'
     };
     setNotifications(prev => [newNotif, ...prev]);
@@ -1515,7 +1515,7 @@ export default function App() {
       buyerAvatar: currentUser.avatar,
       rating,
       comment,
-      date: 'اليوم',
+      date: new Date().toISOString(),
       productTitle: targetOrder.productTitle
     };
 
@@ -1640,7 +1640,7 @@ export default function App() {
       message: `تم فتح تذكرة نزاع أمنية بخصوص "${data.reason}". تم تجميد أموال البائع في محفظة الضمان لحمايتك.`,
       type: 'security',
       isRead: false,
-      createdAt: 'الآن',
+      createdAt: new Date().toISOString(),
       linkTab: 'purchases'
     };
     setNotifications(prev => [notif, ...prev]);

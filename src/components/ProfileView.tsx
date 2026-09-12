@@ -41,6 +41,7 @@ import {
 } from 'lucide-react';
 import { User, SavedCard, Post, Product, MediaItem } from '../types';
 import { MediaLightboxModal } from './MediaLightboxModal';
+import { formatRelativeTime } from '../utils/dateUtils';
 import { 
   validateCreditCardNumber, 
   validateCardExpiry, 
@@ -1085,7 +1086,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 >
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-400 text-[11px]">{post.createdAt || 'منشور نشط'}</span>
+                      <span className="text-slate-400 text-[11px]">{formatRelativeTime(post.createdAt, post.id)}</span>
                       <span className="bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold px-2 py-0.5 rounded-md text-[10px]">
                         منشور نشط
                       </span>
@@ -1373,7 +1374,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
                   {/* Footer actions */}
                   <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                    <span className="text-[10px] text-slate-400">{prod.createdAt || 'معروض حالياً'}</span>
+                    <span className="text-[10px] text-slate-400">{formatRelativeTime(prod.createdAt, prod.id)}</span>
                     <div className="flex items-center gap-1.5">
                       {onNavigateToMarket && (
                         <button

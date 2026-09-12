@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, 
   Filter, 
@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Product, User, MediaItem } from '../types';
 import { MediaLightboxModal } from './MediaLightboxModal';
+import { formatRelativeTime } from '../utils/dateUtils';
 
 interface MarketplaceProps {
   products: Product[];
@@ -59,6 +60,15 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
   });
 
   const CATEGORIES = ['الكل', 'تصاميم وجرافيك', 'برمجة وتطوير', 'كتب وأدلة رقمية', 'قوالب وأدوات'];
+
+  // Auto-refresh relative times periodically
+  const [, setTimeTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeTick(t => t + 1);
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   const isVideoUrl = (url?: string) => {
     if (!url) return false;
@@ -272,9 +282,16 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
                     </div>
                   )}
 
-                  {/* Category Pill */}
-                  <div className="absolute bottom-2.5 right-2.5 bg-slate-900/80 text-white text-[10px] font-semibold px-2.5 py-0.5 rounded-md">
-                    {product.category}
+                  {/* Category & Date Pills */}
+                  <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1.5">
+                    <span className="bg-slate-900/85 backdrop-blur-xs text-white text-[10px] font-semibold px-2.5 py-0.5 rounded-md">
+                      {product.category}
+                    </span>
+                    {product.createdAt && (
+                      <span className="bg-slate-900/85 backdrop-blur-xs text-slate-300 text-[10px] font-medium px-2 py-0.5 rounded-md">
+                        {formatRelativeTime(product.createdAt, product.id)}
+                      </span>
+                    )}
                   </div>
                 </div>
 
