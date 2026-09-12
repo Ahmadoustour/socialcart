@@ -1,5 +1,5 @@
 import React, { type ErrorInfo, type ReactNode } from 'react';
-import { AlertTriangle, RefreshCw, Trash2 } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Sparkles } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
@@ -34,12 +34,15 @@ export class ErrorBoundary extends React.Component<Props, State> {
     window.location.reload();
   };
 
-  private handleResetAndReload = () => {
+  private handleSafeRepair = () => {
     try {
-      localStorage.clear();
-      sessionStorage.clear();
+      // Clean only temporary/volatile session storage, NEVER user data (posts, products, users, cart, orders)
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        window.sessionStorage.clear();
+      }
     } catch {}
-    window.location.href = '/';
+    // Reset error state directly to let React recover safely without destroying user content
+    this.setState({ hasError: false, error: null, errorInfo: null });
   };
 
   public render() {
@@ -57,10 +60,10 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
             <div className="space-y-2">
               <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-                حدث خطأ أثناء تحميل الصفحة
+                واجه النظام مشكلة عابرة في العرض
               </h1>
               <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                واجه المتصفح صعوبة أثناء قراءة البيانات أو تهيئة واجهة التطبيق. يمكنك إعادة تحميل الصفحة للعودة فوراً.
+                بياناتك ومنشوراتك محفوظة بأمان. يمكنك استئناف الاستخدام بنقرة واحدة عبر الإصلاح الذاتي.
               </p>
             </div>
 
@@ -72,19 +75,19 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
             <div className="flex flex-col gap-3 pt-2">
               <button
-                onClick={this.handleReload}
-                className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 shadow-md shadow-indigo-600/20 transition active:scale-95"
+                onClick={this.handleSafeRepair}
+                className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 transition active:scale-95"
               >
-                <RefreshCw className="w-4 h-4" />
-                إعادة تحميل الصفحة
+                <Sparkles className="w-4 h-4" />
+                استئناف العمل واستعادة الواجهة بأمان
               </button>
 
               <button
-                onClick={this.handleResetAndReload}
+                onClick={this.handleReload}
                 className="w-full py-2.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-medium flex items-center justify-center gap-2 transition"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                مسح الذاكرة المؤقتة وإعادة المحاولة
+                <RefreshCw className="w-3.5 h-3.5" />
+                إعادة تحميل الصفحة
               </button>
             </div>
           </div>

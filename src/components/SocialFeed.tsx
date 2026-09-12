@@ -162,16 +162,16 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
               <div className="p-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <img
-                    src={post.author.avatar}
-                    alt={post.author.displayName}
+                    src={post.author?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'}
+                    alt={post.author?.displayName || 'مستخدم'}
                     className="w-11 h-11 rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700"
                   />
                   <div>
                     <div className="flex items-center gap-1.5">
                       <span className="font-bold text-sm text-slate-900 dark:text-white">
-                        {post.author.displayName}
+                        {post.author?.displayName || 'مستخدم'}
                       </span>
-                      {post.author.isVerified && (
+                      {post.author?.isVerified && (
                         <span title="ناشر موثوق" className="inline-flex">
                           <BadgeCheck className="w-4 h-4 text-emerald-500" />
                         </span>
@@ -179,20 +179,28 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
                     </div>
                     <div className="flex items-center gap-2 text-[11px] text-slate-400">
                       <span 
-                        onClick={() => onOpenDirectChat(post.author.username, post.author.displayName, post.author.avatar)}
+                        onClick={() => onOpenDirectChat(
+                          post.author?.username || 'user',
+                          post.author?.displayName || 'مستخدم',
+                          post.author?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
+                        )}
                         className="hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer font-medium"
                       >
-                        @{post.author.username}
+                        @{post.author?.username || 'user'}
                       </span>
                       <span>•</span>
-                      <span>{post.createdAt}</span>
+                      <span>{post.createdAt || 'الآن'}</span>
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => onOpenDirectChat(post.author.username, post.author.displayName, post.author.avatar)}
+                    onClick={() => onOpenDirectChat(
+                      post.author?.username || 'user',
+                      post.author?.displayName || 'مستخدم',
+                      post.author?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
+                    )}
                     className="text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 font-bold px-2.5 py-1 rounded-lg transition"
                   >
                     مراسلة
@@ -332,11 +340,11 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
               {/* Action Stats Bar */}
               <div className="px-4 py-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                 <span className="font-semibold">
-                  ❤️ {post.likesCount} إعجاب
+                  ❤️ {post.likesCount || 0} إعجاب
                 </span>
                 <div className="flex items-center gap-3">
-                  <span>💬 {post.comments.length} تعليق</span>
-                  <span>🔗 {post.sharesCount} مشاركة</span>
+                  <span>💬 {(post.comments || []).length} تعليق</span>
+                  <span>🔗 {post.sharesCount || 0} مشاركة</span>
                 </div>
               </div>
 

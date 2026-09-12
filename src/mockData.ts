@@ -19,6 +19,7 @@ export const CURRENT_USER: User = {
 export const SAMPLE_SELLERS: User[] = [];
 export const INITIAL_PRODUCTS: Product[] = [];
 export const INITIAL_POSTS: Post[] = [];
+
 export const INITIAL_ORDERS: Order[] = [];
 export const INITIAL_CONVERSATIONS: Conversation[] = [];
 export const INITIAL_NOTIFICATIONS: NotificationItem[] = [];

@@ -67,16 +67,21 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
 
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
+      if (!p) return false;
       const matchCat = selectedCategory === 'الكل' || p.category === selectedCategory;
-      const matchSearch = p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          p.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          p.seller.displayName.toLowerCase().includes(searchQuery.toLowerCase());
+      const title = p.title || '';
+      const desc = p.description || '';
+      const sellerName = p.seller?.displayName || '';
+      const q = searchQuery.toLowerCase();
+      const matchSearch = title.toLowerCase().includes(q) ||
+                          desc.toLowerCase().includes(q) ||
+                          sellerName.toLowerCase().includes(q);
       return matchCat && matchSearch;
     }).sort((a, b) => {
-      if (sortBy === 'rating') return b.seller.rating - a.seller.rating;
-      if (sortBy === 'sales') return b.salesCount - a.salesCount;
-      if (sortBy === 'price-asc') return a.price - b.price;
-      if (sortBy === 'price-desc') return b.price - a.price;
+      if (sortBy === 'rating') return (b.seller?.rating || 0) - (a.seller?.rating || 0);
+      if (sortBy === 'sales') return (b.salesCount || 0) - (a.salesCount || 0);
+      if (sortBy === 'price-asc') return (a.price || 0) - (b.price || 0);
+      if (sortBy === 'price-desc') return (b.price || 0) - (a.price || 0);
       return 0;
     });
   }, [products, searchQuery, selectedCategory, sortBy]);
@@ -211,11 +216,11 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
                       isOpen: true,
                       mediaList: mediaItems,
                       initialIndex: 0,
-                      title: product.title,
+                      title: product.title || '',
                       author: {
-                        displayName: product.seller.displayName,
-                        avatar: product.seller.avatar,
-                        username: product.seller.username
+                        displayName: product.seller?.displayName || 'بائع موثوق',
+                        avatar: product.seller?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+                        username: product.seller?.username || 'seller'
                       }
                     });
                   }}
@@ -279,25 +284,30 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
                   {/* Seller Profile Mini Row + Ratings */}
                   <div className="flex items-center justify-between">
                     <div 
-                      onClick={() => onOpenDirectChat(product.seller.username, product.seller.displayName, product.seller.avatar, product.title)}
+                      onClick={() => onOpenDirectChat(
+                        product.seller?.username || 'seller',
+                        product.seller?.displayName || 'بائع موثوق',
+                        product.seller?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+                        product.title
+                      )}
                       className="flex items-center gap-2 cursor-pointer group/seller"
                       title="مراسلة البائع والاستفسار"
                     >
                       <img
-                        src={product.seller.avatar}
-                        alt={product.seller.displayName}
+                        src={product.seller?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'}
+                        alt={product.seller?.displayName || 'بائع'}
                         className="w-7 h-7 rounded-lg object-cover ring-1 ring-slate-200 dark:ring-slate-700"
                       />
                       <div>
                         <div className="flex items-center gap-1">
                           <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover/seller:text-emerald-600 transition">
-                            {product.seller.displayName}
+                            {product.seller?.displayName || 'بائع موثوق'}
                           </span>
-                          {product.seller.isVerified && (
+                          {product.seller?.isVerified && (
                             <BadgeCheck className="w-3.5 h-3.5 text-emerald-500" />
                           )}
                         </div>
-                        <span className="text-[10px] text-slate-400 block -mt-0.5">@{product.seller.username}</span>
+                        <span className="text-[10px] text-slate-400 block -mt-0.5">@{product.seller?.username || 'seller'}</span>
                       </div>
                     </div>
 
@@ -305,22 +315,22 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
                     <button
                       onClick={() => onViewProductReviews(product)}
                       className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition ${
-                        (product.reviews && product.reviews.length > 0) || (product.seller.reviewsCount > 0 && product.seller.rating > 0)
+                        (product.reviews && product.reviews.length > 0) || ((product.seller?.reviewsCount || 0) > 0 && (product.seller?.rating || 0) > 0)
                           ? 'bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/80 text-amber-700 dark:text-amber-300 hover:bg-amber-100'
                           : 'bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-200/80'
                       }`}
                       title="عرض تقييمات العملاء لهذا المنتج"
                     >
-                      {(product.reviews && product.reviews.length > 0) || (product.seller.reviewsCount > 0 && product.seller.rating > 0) ? (
+                      {(product.reviews && product.reviews.length > 0) || ((product.seller?.reviewsCount || 0) > 0 && (product.seller?.rating || 0) > 0) ? (
                         <>
                           <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
                           <span className="font-bold">
                             {product.reviews && product.reviews.length > 0
                               ? (product.reviews.reduce((s, r) => s + Number(r.rating || 0), 0) / product.reviews.length).toFixed(1)
-                              : product.seller.rating}
+                              : (product.seller?.rating || 5.0)}
                           </span>
                           <span className="text-[10px] opacity-70">
-                            ({product.reviews ? product.reviews.length : product.seller.reviewsCount})
+                            ({product.reviews ? product.reviews.length : (product.seller?.reviewsCount || 0)})
                           </span>
                         </>
                       ) : (

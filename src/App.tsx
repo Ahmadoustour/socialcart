@@ -277,8 +277,27 @@ export default function App() {
     try {
       const parsed: Post[] = JSON.parse(saved);
       if (!Array.isArray(parsed)) return [];
-      const demoMockIds = new Set(['demo_post_1', 'demo_post_2', 'demo_post_3']);
-      return parsed.filter(p => p && p.id && !demoMockIds.has(p.id));
+      const sampleIds = new Set(['demo_post_1', 'demo_post_2', 'demo_post_3', 'post_init_1', 'post_init_2']);
+      const clean = parsed
+        .filter(p => p && p.id && !sampleIds.has(p.id))
+        .map(p => ({
+          ...p,
+          author: p.author || {
+            username: 'member',
+            displayName: 'عضو المنصة',
+            avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+            isVerified: false
+          },
+          media: Array.isArray(p.media) ? p.media : [],
+          comments: Array.isArray(p.comments) ? p.comments : [],
+          likesCount: typeof p.likesCount === 'number' ? p.likesCount : 0,
+          sharesCount: typeof p.sharesCount === 'number' ? p.sharesCount : 0,
+          tags: Array.isArray(p.tags) ? p.tags : []
+        }));
+      try {
+        localStorage.setItem('socialcart_posts', JSON.stringify(clean));
+      } catch {}
+      return clean;
     } catch {
       return [];
     }
@@ -290,27 +309,40 @@ export default function App() {
     try {
       const parsed: Product[] = JSON.parse(saved);
       if (!Array.isArray(parsed)) return [];
-      const demoMockIds = new Set(['demo_prod_1', 'demo_prod_2', 'demo_prod_3']);
-      return parsed
-        .filter(p => p && p.id && !demoMockIds.has(p.id))
+      const sampleProdIds = new Set(['demo_prod_1', 'demo_prod_2', 'demo_prod_3', 'prod_1', 'prod_2', 'prod_3']);
+      const clean = parsed
+        .filter(p => p && p.id && !sampleProdIds.has(p.id))
         .map(p => {
-          const revs = p.reviews || [];
+          const revs = Array.isArray(p.reviews) ? p.reviews : [];
           const actualCount = revs.length;
           const actualRating = actualCount > 0
             ? Number((revs.reduce((s, r) => s + Number(r.rating || 0), 0) / actualCount).toFixed(1))
-            : (actualCount === 0 ? 0 : (p.seller?.rating || 0));
+            : (actualCount === 0 ? 0 : (p.seller?.rating || 5.0));
 
           return {
             ...p,
+            media: Array.isArray(p.media) ? p.media : [],
             reviews: revs,
             rating: actualRating,
             seller: {
-              ...p.seller,
+              ...(p.seller || {
+                username: 'seller',
+                displayName: 'بائع معتمد',
+                avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+                isVerified: true,
+                rating: actualRating,
+                reviewsCount: actualCount,
+                trustScore: 98
+              }),
               rating: actualRating,
               reviewsCount: actualCount
             }
           };
         });
+      try {
+        localStorage.setItem('socialcart_products', JSON.stringify(clean));
+      } catch {}
+      return clean;
     } catch {
       return [];
     }
