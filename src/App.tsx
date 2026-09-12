@@ -118,6 +118,9 @@ function addDeletedConvId(userId: string, convId: string) {
   } catch {}
 }
 
+const FAKE_CONVERSATION_IDS = new Set(['conv_sarah_welcome', 'conv_ahmed_inquiry']);
+const FAKE_USERNAMES = new Set(['sarah_art', 'ahmed_tech', 'usr_sarah_art', 'usr_ahmed_tech', 'ahmed_dev', 'usr_me']);
+
 function loadUserConversations(userId: string, username?: string): Conversation[] {
   // Clean up dangerous legacy shared key so it can never leak to new accounts
   try {
@@ -138,6 +141,14 @@ function loadUserConversations(userId: string, username?: string): Conversation[
         userList = parsed.filter(c => {
           if (!c || !c.id) return false;
           if (deletedSet.has(c.id)) return false; // Strictly exclude deleted conversations!
+          if (FAKE_CONVERSATION_IDS.has(c.id)) return false; // Strictly exclude fake conversations!
+          if (
+            FAKE_USERNAMES.has(c.participantUsername?.toLowerCase()) || 
+            FAKE_USERNAMES.has(c.participantId?.toLowerCase())
+          ) {
+            return false; // Strictly exclude fake accounts!
+          }
+
           // STRICT PRIVACY ISOLATION:
           // A conversation belongs to this user ONLY if they are the owner, creator, or participant!
           if (cleanUser) {
@@ -155,72 +166,81 @@ function loadUserConversations(userId: string, username?: string): Conversation[
     } catch {}
   }
 
-  // If userList is empty, seed demo conversations
-  if (userList.length === 0) {
-    userList = INITIAL_CONVERSATIONS.filter(c => !deletedSet.has(c.id)).map(c => ({
-      ...c,
-      userId,
-      unreadCount: 0,
-      participants: Array.from(new Set([cleanUser || 'user', c.participantUsername.toLowerCase()]))
-    }));
-    try {
-      localStorage.setItem(userKey, JSON.stringify(userList));
-    } catch {}
-  }
+  // Update storage key with cleaned list (no fake demo seeding)
+  try {
+    localStorage.setItem(userKey, JSON.stringify(userList));
+  } catch {}
 
   // 2. Also check shared conversation registry for cross-user routing
   try {
     const shared = localStorage.getItem('socialcart_shared_conversations_pool');
-    if (shared && cleanUser) {
+    if (shared) {
       const parsedShared: Conversation[] = JSON.parse(shared);
       if (Array.isArray(parsedShared)) {
-        parsedShared.forEach(poolConv => {
-          if (!poolConv || !poolConv.id || deletedSet.has(poolConv.id)) return; // Strictly exclude deleted!
-          const participants = (poolConv.participants || [
-            poolConv.creatorUsername || '',
-            poolConv.participantUsername || ''
-          ]).map(p => p.toLowerCase());
-
-          if (participants.includes(cleanUser)) {
-            const existingIdx = userList.findIndex(c => c.id === poolConv.id);
-            let adapted = { ...poolConv };
-            // If this user is the recipient (not creator), adjust recipient labels to show creator
-            if (poolConv.participantUsername?.toLowerCase() === cleanUser && poolConv.creatorUsername) {
-              adapted = {
-                ...adapted,
-                participantUsername: poolConv.creatorUsername,
-                participantDisplayName: poolConv.creatorDisplayName || poolConv.creatorUsername,
-                participantAvatar: poolConv.creatorAvatar || poolConv.participantAvatar,
-              };
-            }
-
-            // Determine recipient unread count correctly
-            if (poolConv.unreadCountBy && typeof poolConv.unreadCountBy[cleanUser] === 'number') {
-              adapted.unreadCount = poolConv.unreadCountBy[cleanUser];
-            } else {
-              adapted.unreadCount = adapted.unreadCount || 0;
-            }
-
-            // Dynamically recalculate isMe for the currently viewing user
-            if (adapted.messages) {
-              adapted.messages = adapted.messages.map(m => ({
-                ...m,
-                isMe: m.senderUsername?.toLowerCase() === cleanUser
-              }));
-            }
-
-            if (existingIdx >= 0) {
-              userList[existingIdx] = adapted;
-            } else {
-              userList.push(adapted);
-            }
+        // Purge fake conversations from shared pool
+        const cleanPool = parsedShared.filter(poolConv => {
+          if (!poolConv || !poolConv.id) return false;
+          if (FAKE_CONVERSATION_IDS.has(poolConv.id)) return false;
+          if (
+            FAKE_USERNAMES.has(poolConv.participantUsername?.toLowerCase()) ||
+            FAKE_USERNAMES.has(poolConv.creatorUsername?.toLowerCase())
+          ) {
+            return false;
           }
+          return true;
         });
+
+        localStorage.setItem('socialcart_shared_conversations_pool', JSON.stringify(cleanPool));
+
+        if (cleanUser) {
+          cleanPool.forEach(poolConv => {
+            if (deletedSet.has(poolConv.id)) return; // Strictly exclude deleted!
+            const participants = (poolConv.participants || [
+              poolConv.creatorUsername || '',
+              poolConv.participantUsername || ''
+            ]).map(p => p.toLowerCase());
+
+            if (participants.includes(cleanUser)) {
+              const existingIdx = userList.findIndex(c => c.id === poolConv.id);
+              let adapted = { ...poolConv };
+              // If this user is the recipient (not creator), adjust recipient labels to show creator
+              if (poolConv.participantUsername?.toLowerCase() === cleanUser && poolConv.creatorUsername) {
+                adapted = {
+                  ...adapted,
+                  participantUsername: poolConv.creatorUsername,
+                  participantDisplayName: poolConv.creatorDisplayName || poolConv.creatorUsername,
+                  participantAvatar: poolConv.creatorAvatar || poolConv.participantAvatar,
+                };
+              }
+
+              // Determine recipient unread count correctly
+              if (poolConv.unreadCountBy && typeof poolConv.unreadCountBy[cleanUser] === 'number') {
+                adapted.unreadCount = poolConv.unreadCountBy[cleanUser];
+              } else {
+                adapted.unreadCount = adapted.unreadCount || 0;
+              }
+
+              // Dynamically recalculate isMe for the currently viewing user
+              if (adapted.messages) {
+                adapted.messages = adapted.messages.map(m => ({
+                  ...m,
+                  isMe: m.senderUsername?.toLowerCase() === cleanUser
+                }));
+              }
+
+              if (existingIdx >= 0) {
+                userList[existingIdx] = adapted;
+              } else {
+                userList.push(adapted);
+              }
+            }
+          });
+        }
       }
     }
   } catch {}
 
-  return userList.filter(c => !deletedSet.has(c.id));
+  return userList.filter(c => !deletedSet.has(c.id) && !FAKE_CONVERSATION_IDS.has(c.id));
 }
 
 function loadUserNotifications(userId: string): NotificationItem[] {
@@ -253,11 +273,25 @@ export default function App() {
 
   // Auth & Account State
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    // Purge fake accounts from registered users list in storage
+    try {
+      const registeredStr = localStorage.getItem('socialcart_registered_users');
+      if (registeredStr) {
+        const parsed = JSON.parse(registeredStr);
+        if (Array.isArray(parsed)) {
+          const cleanUsers = parsed.filter((u: any) => 
+            u && u.username && !FAKE_USERNAMES.has(u.username.toLowerCase()) && !FAKE_USERNAMES.has(u.id?.toLowerCase())
+          );
+          localStorage.setItem('socialcart_registered_users', JSON.stringify(cleanUsers));
+        }
+      }
+    } catch {}
+
     const userStr = localStorage.getItem('socialcart_user');
     if (userStr) {
       try {
         const u = JSON.parse(userStr);
-        if (u.username === 'ahmed_dev' || u.id === 'usr_me' || !u.id || u.id === 'guest') {
+        if (FAKE_USERNAMES.has(u.username?.toLowerCase()) || FAKE_USERNAMES.has(u.id?.toLowerCase()) || !u.id || u.id === 'guest') {
           localStorage.removeItem('socialcart_user');
           localStorage.setItem('socialcart_logged_in', 'false');
           return false;
@@ -280,7 +314,9 @@ export default function App() {
         const parsed = JSON.parse(registeredStr);
         if (Array.isArray(parsed)) {
           parsed.forEach((u: any) => {
-            if (u && u.username) list.push(u.username);
+            if (u && u.username && !FAKE_USERNAMES.has(u.username.toLowerCase())) {
+              list.push(u.username);
+            }
           });
         }
       } catch {}
@@ -296,7 +332,9 @@ export default function App() {
         const parsed = JSON.parse(registeredStr);
         if (Array.isArray(parsed)) {
           parsed.forEach((u: any) => {
-            if (u && u.email) list.push(u.email);
+            if (u && u.email && !FAKE_USERNAMES.has(u.username?.toLowerCase())) {
+              list.push(u.email);
+            }
           });
         }
       } catch {}
@@ -310,7 +348,7 @@ export default function App() {
     if (saved) {
       try {
         const u = JSON.parse(saved);
-        if (u.username === 'ahmed_dev' || u.id === 'usr_me' || !u.id || u.id === 'guest') {
+        if (FAKE_USERNAMES.has(u.username?.toLowerCase()) || FAKE_USERNAMES.has(u.id?.toLowerCase()) || !u.id || u.id === 'guest') {
           return GUEST_USER;
         }
         if (!u.sellerReviewsCount || u.sellerReviewsCount === 0) {

@@ -10,15 +10,15 @@ const sanitize = (val: string | undefined, fallback: string): string => {
   return target.replace(/[\r\n\t\s]/g, "").trim();
 };
 
-// Firebase configuration with environment variables and real project fallbacks
+// Firebase configuration with environment variables and safe dev fallbacks
 const firebaseConfig = {
-  apiKey: sanitize(import.meta.env.VITE_FIREBASE_API_KEY, "AIzaSyC5EEduQB--mCsEGVKS7touK1EYnotLhek"),
-  authDomain: sanitize(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN, "socialcart-f818e.firebaseapp.com"),
-  projectId: sanitize(import.meta.env.VITE_FIREBASE_PROJECT_ID, "socialcart-f818e"),
-  storageBucket: sanitize(import.meta.env.VITE_FIREBASE_STORAGE_BUCKET, "socialcart-f818e.firebasestorage.app"),
-  messagingSenderId: sanitize(import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID, "971744960264"),
-  appId: sanitize(import.meta.env.VITE_FIREBASE_APP_ID, "1:971744960264:web:9ef9f03741715944dc96bd"),
-  measurementId: sanitize(import.meta.env.VITE_FIREBASE_MEASUREMENT_ID, "G-R87ZHKP97L")
+  apiKey: sanitize(import.meta.env.VITE_FIREBASE_API_KEY, "demo-api-key"),
+  authDomain: sanitize(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN, "demo-project.firebaseapp.com"),
+  projectId: sanitize(import.meta.env.VITE_FIREBASE_PROJECT_ID, "demo-project"),
+  storageBucket: sanitize(import.meta.env.VITE_FIREBASE_STORAGE_BUCKET, "demo-project.appspot.com"),
+  messagingSenderId: sanitize(import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID, "100000000000"),
+  appId: sanitize(import.meta.env.VITE_FIREBASE_APP_ID, "1:100000000000:web:demoapp"),
+  measurementId: sanitize(import.meta.env.VITE_FIREBASE_MEASUREMENT_ID, "G-DEMO")
 };
 
 // Initialize Firebase safely (avoiding duplicate initialization)
