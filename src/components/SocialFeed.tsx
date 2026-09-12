@@ -172,7 +172,9 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
                         {post.author.displayName}
                       </span>
                       {post.author.isVerified && (
-                        <BadgeCheck className="w-4 h-4 text-emerald-500" title="ناشر موثوق" />
+                        <span title="ناشر موثوق" className="inline-flex">
+                          <BadgeCheck className="w-4 h-4 text-emerald-500" />
+                        </span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 text-[11px] text-slate-400">

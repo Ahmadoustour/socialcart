@@ -83,6 +83,7 @@ try {
 var POSTS_FILE = path.join(DATA_DIR, "posts.json");
 var PRODUCTS_FILE = path.join(DATA_DIR, "products.json");
 var USERS_FILE = path.join(DATA_DIR, "users.json");
+var ORDERS_FILE = path.join(DATA_DIR, "orders.json");
 function readJsonFile(filePath, defaultValue) {
   try {
     if (fs.existsSync(filePath)) {
@@ -859,6 +860,29 @@ app.delete("/api/products/:id", (req, res) => {
     res.status(500).json({ error: error.message || "Failed to delete product" });
   }
 });
+app.get(["/api/auth/check-unique", "/api/users/check-unique"], (req, res) => {
+  const { username, email, excludeId } = req.query;
+  const users = readJsonFile(USERS_FILE, []);
+  let usernameTaken = false;
+  let emailTaken = false;
+  if (username && typeof username === "string") {
+    const cleanU = username.trim().toLowerCase().replace(/\s+/g, "");
+    usernameTaken = users.some(
+      (u) => (!excludeId || u.id !== excludeId) && u.username && u.username.trim().toLowerCase().replace(/\s+/g, "") === cleanU
+    );
+  }
+  if (email && typeof email === "string") {
+    const cleanE = email.trim().toLowerCase();
+    emailTaken = users.some(
+      (u) => (!excludeId || u.id !== excludeId) && u.email && u.email.trim().toLowerCase() === cleanE
+    );
+  }
+  res.json({
+    available: !usernameTaken && !emailTaken,
+    usernameTaken,
+    emailTaken
+  });
+});
 app.get("/api/users", (req, res) => {
   const users = readJsonFile(USERS_FILE, []);
   res.json(users);
@@ -882,15 +906,28 @@ app.post("/api/users", (req, res) => {
       return res.status(400).json({ error: "Invalid user data provided" });
     }
     const users = readJsonFile(USERS_FILE, []);
-    const existingIndex = users.findIndex(
-      (u) => user.id && u.id === user.id || user.email && u.email && u.email.toLowerCase() === user.email.toLowerCase() || user.username && u.username && u.username.toLowerCase() === user.username.toLowerCase()
-    );
+    const existingIndex = users.findIndex((u) => user.id && u.id === user.id);
     if (existingIndex >= 0) {
+      if (user.username) {
+        const cleanU = user.username.trim().toLowerCase().replace(/\s+/g, "");
+        const conflict = users.some((u) => u.id !== user.id && u.username && u.username.trim().toLowerCase().replace(/\s+/g, "") === cleanU);
+        if (conflict) {
+          return res.status(409).json({ error: "USERNAME_EXISTS", message: "\u0627\u0633\u0645 \u0627\u0644\u0645\u0633\u062A\u062E\u062F\u0645 \u0645\u062D\u062C\u0648\u0632 \u0628\u0627\u0644\u0641\u0639\u0644 \u0644\u0645\u0633\u062A\u062E\u062F\u0645 \u0622\u062E\u0631" });
+        }
+      }
+      if (user.email) {
+        const cleanE = user.email.trim().toLowerCase();
+        const conflict = users.some((u) => u.id !== user.id && u.email && u.email.trim().toLowerCase() === cleanE);
+        if (conflict) {
+          return res.status(409).json({ error: "EMAIL_EXISTS", message: "\u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0645\u0633\u062A\u062E\u062F\u0645 \u0628\u0627\u0644\u0641\u0639\u0644 \u0628\u062D\u0633\u0627\u0628 \u0622\u062E\u0631" });
+        }
+      }
       users[existingIndex] = {
         ...users[existingIndex],
         ...user,
-        // Ensure nested or sensitive fields are preserved if not provided in update
-        savedCard: user.savedCard !== void 0 ? user.savedCard : users[existingIndex].savedCard,
+        username: user.username ? user.username.trim().toLowerCase().replace(/\s+/g, "") : users[existingIndex].username,
+        email: user.email ? user.email.trim().toLowerCase() : users[existingIndex].email,
+        savedCard: "savedCard" in user ? user.savedCard : users[existingIndex].savedCard,
         password: user.password !== void 0 ? user.password : users[existingIndex].password,
         bio: user.bio !== void 0 ? user.bio : users[existingIndex].bio,
         updatedAt: (/* @__PURE__ */ new Date()).toISOString()
@@ -898,16 +935,68 @@ app.post("/api/users", (req, res) => {
       writeJsonFile(USERS_FILE, users);
       return res.json(users[existingIndex]);
     } else {
+      const cleanU = (user.username || "").trim().toLowerCase().replace(/\s+/g, "");
+      const cleanE = (user.email || "").trim().toLowerCase();
+      if (cleanE && users.some((u) => u.email && u.email.trim().toLowerCase() === cleanE)) {
+        return res.status(409).json({
+          error: "EMAIL_EXISTS",
+          message: "\u0647\u0630\u0627 \u0627\u0644\u0628\u0631\u064A\u062F \u0627\u0644\u0625\u0644\u0643\u062A\u0631\u0648\u0646\u064A \u0645\u0633\u062C\u0644 \u0645\u0633\u0628\u0642\u0627\u064B \u0628\u062D\u0633\u0627\u0628 \u0622\u062E\u0631. \u064A\u0631\u062C\u0649 \u062A\u0633\u062C\u064A\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0628\u062F\u0644\u0627\u064B \u0645\u0646 \u0625\u0646\u0634\u0627\u0621 \u062D\u0633\u0627\u0628 \u062C\u062F\u064A\u062F."
+        });
+      }
+      if (cleanU && users.some((u) => u.username && u.username.trim().toLowerCase().replace(/\s+/g, "") === cleanU)) {
+        return res.status(409).json({
+          error: "USERNAME_EXISTS",
+          message: "\u0627\u0633\u0645 \u0627\u0644\u0645\u0633\u062A\u062E\u062F\u0645 \u0647\u0630\u0627 \u0645\u062D\u062C\u0648\u0632 \u0628\u0627\u0644\u0641\u0639\u0644 \u0644\u0645\u0633\u062A\u062E\u062F\u0645 \u0622\u062E\u0631. \u064A\u0631\u062C\u0649 \u0627\u062E\u062A\u064A\u0627\u0631 \u0627\u0633\u0645 \u0645\u0633\u062A\u062E\u062F\u0645 \u0645\u062A\u0627\u062D."
+        });
+      }
       const newUser = {
         ...user,
+        username: cleanU,
+        email: cleanE,
         createdAt: user.createdAt || (/* @__PURE__ */ new Date()).toISOString()
       };
       users.push(newUser);
       writeJsonFile(USERS_FILE, users);
-      return res.json(newUser);
+      return res.status(201).json(newUser);
     }
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to persist user" });
+  }
+});
+app.get(["/api/orders", "/orders"], (req, res) => {
+  const { userId, buyerId } = req.query;
+  const orders = readJsonFile(ORDERS_FILE, []);
+  const targetUser = userId || buyerId;
+  if (targetUser) {
+    const clean = targetUser.toLowerCase();
+    const filtered = orders.filter(
+      (o) => o.buyerId && o.buyerId.toLowerCase() === clean || o.buyerEmail && o.buyerEmail.toLowerCase() === clean || o.buyerUsername && o.buyerUsername.toLowerCase() === clean
+    );
+    return res.json(filtered);
+  }
+  res.json(orders);
+});
+app.post(["/api/orders", "/orders"], (req, res) => {
+  try {
+    const payload = req.body;
+    if (!payload) {
+      return res.status(400).json({ error: "Invalid order data" });
+    }
+    const orders = readJsonFile(ORDERS_FILE, []);
+    const incomingOrders = Array.isArray(payload) ? payload : [payload];
+    incomingOrders.forEach((newOrder) => {
+      if (!newOrder || !newOrder.id) return;
+      const idx = orders.findIndex((o) => o.id === newOrder.id);
+      if (idx >= 0) {
+        orders[idx] = { ...orders[idx], ...newOrder };
+      } else {
+        orders.unshift(newOrder);
+      }
+    });
+    writeJsonFile(ORDERS_FILE, orders);
+    res.json({ success: true, count: orders.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to persist orders" });
   }
 });
 app.use((err, req, res, next) => {
@@ -940,8 +1029,7 @@ async function startServer() {
     console.log(`Server running on port ${PORT} (http://0.0.0.0:${PORT})`);
   });
 }
-var isDirectExecution = process.argv[1] && (process.argv[1].endsWith("server.ts") || process.argv[1].endsWith("server.cjs") || process.argv[1].endsWith("server.js"));
-if (!process.env.VERCEL && isDirectExecution) {
+if (!process.env.VERCEL) {
   startServer();
 }
 var server_default = app;

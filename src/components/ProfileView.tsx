@@ -894,7 +894,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <h1 className="text-xl font-black text-slate-900 dark:text-white">
                     {currentUser.displayName}
                   </h1>
-                  <BadgeCheck className="w-5 h-5 text-emerald-500" title="بائع معتمد بهوية موثقة" />
+                  <span title="بائع معتمد بهوية موثقة" className="inline-flex">
+                    <BadgeCheck className="w-5 h-5 text-emerald-500" />
+                  </span>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                   @{currentUser.username} • عضو منذ {currentUser.joinedDate}

@@ -45,6 +45,7 @@ export interface Post {
   id: string;
   userId: string;
   author: {
+    id?: string;
     username: string;
     displayName: string;
     avatar: string;
@@ -82,6 +83,7 @@ export interface Product {
     rating: number;
     reviewsCount: number;
     trustScore: number;
+    totalSales?: number;
   };
   title: string;
   description: string;

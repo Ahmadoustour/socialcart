@@ -1,5 +1,7 @@
 {
   "version": 2,
+  "framework": "vite",
+  "outputDirectory": "dist",
   "functions": {
     "api/index.js": {
       "maxDuration": 30
@@ -11,7 +13,7 @@
       "destination": "/api?path=$1"
     },
     {
-      "source": "/((?!api/.*).*)",
+      "source": "/((?!api/|assets/|favicon\\.ico).*)",
       "destination": "/index.html"
     }
   ]
