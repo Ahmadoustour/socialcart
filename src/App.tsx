@@ -765,7 +765,19 @@ export default function App() {
       setIsAuthModalOpen(true);
       return;
     }
+    // Bug Fix: When opening the messages screen, always reset any selected conversation
+    // so the messages screen ALWAYS presents the complete conversations list first!
+    if (tab === 'messages') {
+      setSelectedSocialConvId(null);
+      setSelectedMarketConvId(null);
+    }
     setActiveTab(tab);
+  };
+
+  const handleSwitchSection = (section: 'social' | 'market') => {
+    setActiveSection(section);
+    setSelectedSocialConvId(null);
+    setSelectedMarketConvId(null);
   };
 
   const handleSwitchUser = (user: User) => {
@@ -796,16 +808,43 @@ export default function App() {
   }, [activeTab]);
 
   // Derived counts with dynamic clearing when opened (and 0 when logged out)
-  // Explicit requirement: The bottom tab badge displays the count of distinct PEOPLE who messaged me
-  const unreadSocialSendersCount = isLoggedIn 
-    ? conversations.filter(c => c.type === 'social' && c.unreadCount > 0).length 
-    : 0;
-  const unreadMarketSendersCount = isLoggedIn 
-    ? conversations.filter(c => c.type === 'market' && c.unreadCount > 0).length 
-    : 0;
-  const totalUnreadSendersCount = isLoggedIn
-    ? conversations.filter(c => c.unreadCount > 0).length
-    : 0;
+  // Explicit requirement: The bottom tab badge displays the count of distinct PEOPLE (unique conversations) who messaged me with unread messages
+  const unreadSocialSendersCount = useMemo(() => {
+    if (!isLoggedIn) return 0;
+    const senders = new Set<string>();
+    conversations.forEach(c => {
+      if (c.type === 'social' && (c.unreadCount || 0) > 0) {
+        const id = (c.participantUsername || c.participantId || c.id).toLowerCase().trim();
+        senders.add(id);
+      }
+    });
+    return senders.size;
+  }, [isLoggedIn, conversations]);
+
+  const unreadMarketSendersCount = useMemo(() => {
+    if (!isLoggedIn) return 0;
+    const senders = new Set<string>();
+    conversations.forEach(c => {
+      if (c.type === 'market' && (c.unreadCount || 0) > 0) {
+        const id = (c.participantUsername || c.participantId || c.id).toLowerCase().trim();
+        senders.add(id);
+      }
+    });
+    return senders.size;
+  }, [isLoggedIn, conversations]);
+
+  const totalUnreadSendersCount = useMemo(() => {
+    if (!isLoggedIn) return 0;
+    const senders = new Set<string>();
+    conversations.forEach(c => {
+      if ((c.unreadCount || 0) > 0) {
+        const id = (c.participantUsername || c.participantId || c.id).toLowerCase().trim();
+        senders.add(id);
+      }
+    });
+    return senders.size;
+  }, [isLoggedIn, conversations]);
+
   const unreadSendersCount = activeSection === 'market' ? unreadMarketSendersCount : unreadSocialSendersCount;
 
   const unreadNotifsCount = isLoggedIn ? notifications.filter(n => !n.isRead).length : 0;
@@ -1717,7 +1756,7 @@ export default function App() {
       {/* Top Header with Unified Switcher (Social vs Market preserved at the top) */}
       <Header
         activeSection={activeSection}
-        onSwitchSection={setActiveSection}
+        onSwitchSection={handleSwitchSection}
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
         currentUser={currentUser}
@@ -2030,7 +2069,7 @@ export default function App() {
         activeSection={activeSection}
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
-        onSwitchSection={(section) => setActiveSection(section)}
+        onSwitchSection={handleSwitchSection}
         cartBadgeCount={cartBadgeCount}
         unreadMessagesCount={unreadSocialSendersCount}
         unreadMarketMessagesCount={unreadMarketSendersCount}

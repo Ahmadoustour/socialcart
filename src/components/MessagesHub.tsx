@@ -137,7 +137,7 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
         setActiveConvId(initialActiveConvId);
         setShowMobileChat(true);
       }
-    } else if (isModeChanged) {
+    } else if (isModeChanged || !initialActiveConvId) {
       setShowMobileChat(false);
       setActiveConvId('');
     }
@@ -415,7 +415,7 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
             ) : (
               filteredConversations.map(conv => {
                 const isActive = conv.id === activeConvId;
-                const incomingCount = (conv.messages || []).filter(m => !m.isMe).length;
+                const hasUnread = (conv.unreadCount || 0) > 0;
 
                 return (
                   <div
@@ -426,7 +426,9 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                         ? (isMarket 
                             ? 'bg-emerald-50/90 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 shadow-xs' 
                             : 'bg-indigo-50/90 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-800 shadow-xs')
-                        : 'bg-white dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 border-transparent'
+                        : (hasUnread
+                            ? 'bg-rose-50/50 dark:bg-rose-950/25 border-rose-200/70 dark:border-rose-900/50 hover:bg-rose-100/60 dark:hover:bg-rose-950/40 shadow-xs'
+                            : 'bg-white dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 border-transparent')
                     }`}
                   >
                     {/* Avatar */}
@@ -436,9 +438,9 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                         alt={conv.participantDisplayName}
                         className="w-11 h-11 rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700"
                       />
-                      {conv.unreadCount > 0 && (
+                      {hasUnread && (
                         <span
-                          className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] min-w-[19px] h-[19px] px-1 rounded-full flex items-center justify-center font-bold shadow-md animate-pulse z-10 ring-2 ring-white dark:ring-slate-900"
+                          className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] min-w-[19px] h-[19px] px-1 rounded-full flex items-center justify-center font-black shadow-md ring-2 ring-white dark:ring-slate-900 leading-none z-10 animate-pulse"
                           title={`${conv.unreadCount} رسائل جديدة`}
                         >
                           {conv.unreadCount > 99 ? '+99' : conv.unreadCount}
@@ -458,17 +460,27 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                     {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1">
-                          <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className={`text-xs truncate ${hasUnread ? 'font-black text-slate-900 dark:text-white' : 'font-bold text-slate-800 dark:text-slate-200'}`}>
                             {conv.participantDisplayName}
                           </span>
                           {conv.isVerified && (
                             <BadgeCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                           )}
                         </div>
-                        <span className="text-[10px] text-slate-400 shrink-0">
-                          {formatConversationTime(conv.lastMessageTime)}
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {hasUnread && (
+                            <span 
+                              className="bg-rose-500 text-white text-[10px] font-black min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shadow-xs ring-1 ring-white dark:ring-slate-800 leading-none"
+                              title={`${conv.unreadCount} رسائل غير مقروءة`}
+                            >
+                              {conv.unreadCount > 99 ? '+99' : conv.unreadCount}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-slate-400">
+                            {formatConversationTime(conv.lastMessageTime)}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Related product pill if market inquiry */}
@@ -482,19 +494,14 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                       )}
 
                       <div className="flex items-center justify-between mt-1">
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex-1 ml-2">
+                        <p className={`text-[11px] truncate flex-1 ml-2 ${
+                          hasUnread 
+                            ? 'text-slate-900 dark:text-slate-100 font-bold' 
+                            : 'text-slate-500 dark:text-slate-400'
+                        }`}>
                           {conv.lastMessage}
                         </p>
                         <div className="flex items-center gap-1.5 shrink-0">
-                          {/* Unread badge for this specific chat: shown only when there are unread messages, disappears when read */}
-                          {conv.unreadCount > 0 && (
-                            <span 
-                              className="text-white text-[10px] min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center font-bold shadow-xs bg-rose-500 animate-pulse"
-                              title={`وصلتك ${conv.unreadCount} رسائل جديدة لم تقرأها من هذا الشخص`}
-                            >
-                              {conv.unreadCount > 99 ? '+99' : conv.unreadCount}
-                            </span>
-                          )}
                           {/* Delete conversation button */}
                           <button
                             type="button"
