@@ -1089,6 +1089,21 @@ export default function App() {
   };
 
   const handleDeleteComment = async (postId: string, commentId: string) => {
+    // Check authorization: only the actual comment author can delete their comment
+    const postObj = posts.find(p => p.id === postId);
+    const commentObj = postObj?.comments?.find(c => c.id === commentId);
+    if (!commentObj) return;
+
+    const isCommentAuthor = currentUser && currentUser.id !== 'guest' && (
+      (commentObj.username && currentUser.username && commentObj.username.toLowerCase() === currentUser.username.toLowerCase()) ||
+      (commentObj.userId && currentUser.id && commentObj.userId === currentUser.id)
+    );
+
+    if (!isCommentAuthor) {
+      console.warn('Unauthorized comment deletion attempt: user is not the comment author');
+      return;
+    }
+
     let targetPost: Post | null = null;
     setPosts(prev => prev.map(p => {
       if (p.id === postId) {
@@ -1102,9 +1117,13 @@ export default function App() {
       return p;
     }));
 
-    // Server-side deletion endpoint
+    // Server-side deletion endpoint with requester info for security validation
     try {
-      await fetch(`/api/posts/${postId}/comments/${commentId}`, {
+      const queryParams = new URLSearchParams({
+        requesterUsername: currentUser.username || '',
+        requesterUserId: currentUser.id || ''
+      });
+      await fetch(`/api/posts/${postId}/comments/${commentId}?${queryParams.toString()}`, {
         method: 'DELETE'
       });
     } catch (err) {

@@ -939,10 +939,26 @@ app.delete("/api/posts/:id", (req, res) => {
 app.delete("/api/posts/:postId/comments/:commentId", (req, res) => {
   try {
     const { postId, commentId } = req.params;
+    const requesterUsername = typeof req.query.requesterUsername === "string" ? req.query.requesterUsername.trim().toLowerCase() : "";
+    const requesterUserId = typeof req.query.requesterUserId === "string" ? req.query.requesterUserId.trim() : "";
+
     let posts = readJsonFile<any[]>(POSTS_FILE, []);
     const postIndex = posts.findIndex(p => p.id === postId);
     if (postIndex >= 0) {
       const currentComments = Array.isArray(posts[postIndex].comments) ? posts[postIndex].comments : [];
+      const targetComment = currentComments.find((c: any) => c.id === commentId);
+
+      // Verify authorization: only the author of the comment can delete it
+      if (targetComment && (requesterUsername || requesterUserId)) {
+        const commentAuthorUsername = (targetComment.username || "").trim().toLowerCase();
+        const commentAuthorUserId = (targetComment.userId || "").trim();
+        const isAuthor = (requesterUsername && commentAuthorUsername && requesterUsername === commentAuthorUsername) ||
+                         (requesterUserId && commentAuthorUserId && requesterUserId === commentAuthorUserId);
+        if (!isAuthor) {
+          return res.status(403).json({ error: "Only the author of the comment can delete this comment" });
+        }
+      }
+
       posts[postIndex].comments = currentComments.filter((c: any) => c.id !== commentId);
       writeJsonFile(POSTS_FILE, posts);
       return res.json({ success: true, postId, commentId, post: posts[postIndex] });

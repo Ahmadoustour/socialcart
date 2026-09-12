@@ -826,6 +826,38 @@ app.delete("/api/posts/:id", (req, res) => {
     res.status(500).json({ error: error.message || "Failed to delete post" });
   }
 });
+app.delete("/api/posts/:postId/comments/:commentId", (req, res) => {
+  try {
+    const { postId, commentId } = req.params;
+    const requesterUsername = typeof req.query.requesterUsername === "string" ? req.query.requesterUsername.trim().toLowerCase() : "";
+    const requesterUserId = typeof req.query.requesterUserId === "string" ? req.query.requesterUserId.trim() : "";
+
+    let posts = readJsonFile(POSTS_FILE, []);
+    const postIndex = posts.findIndex((p) => p.id === postId);
+    if (postIndex >= 0) {
+      const currentComments = Array.isArray(posts[postIndex].comments) ? posts[postIndex].comments : [];
+      const targetComment = currentComments.find((c) => c.id === commentId);
+
+      // Verify authorization: only the author of the comment can delete it
+      if (targetComment && (requesterUsername || requesterUserId)) {
+        const commentAuthorUsername = (targetComment.username || "").trim().toLowerCase();
+        const commentAuthorUserId = (targetComment.userId || "").trim();
+        const isAuthor = (requesterUsername && commentAuthorUsername && requesterUsername === commentAuthorUsername) ||
+                         (requesterUserId && commentAuthorUserId && requesterUserId === commentAuthorUserId);
+        if (!isAuthor) {
+          return res.status(403).json({ error: "Only the author of the comment can delete this comment" });
+        }
+      }
+
+      posts[postIndex].comments = currentComments.filter((c) => c.id !== commentId);
+      writeJsonFile(POSTS_FILE, posts);
+      return res.json({ success: true, postId, commentId, post: posts[postIndex] });
+    }
+    res.status(404).json({ error: "Post not found" });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to delete comment" });
+  }
+});
 app.get("/api/products", (req, res) => {
   const products = readJsonFile(PRODUCTS_FILE, []);
   res.json(products);
@@ -858,6 +890,29 @@ app.delete("/api/products/:id", (req, res) => {
     res.json({ success: true, id });
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to delete product" });
+  }
+});
+app.delete("/api/products/:productId/reviews/:reviewId", (req, res) => {
+  try {
+    const { productId, reviewId } = req.params;
+    let products = readJsonFile(PRODUCTS_FILE, []);
+    const prodIndex = products.findIndex((p) => p.id === productId);
+    if (prodIndex >= 0) {
+      const currentReviews = Array.isArray(products[prodIndex].reviews) ? products[prodIndex].reviews : [];
+      const updatedReviews = currentReviews.filter((r) => r.id !== reviewId);
+      const reviewsCount = updatedReviews.length;
+      const avgRating = reviewsCount > 0 ? Number((updatedReviews.reduce((acc, r) => acc + Number(r.rating || 0), 0) / reviewsCount).toFixed(1)) : 0;
+      products[prodIndex].reviews = updatedReviews;
+      if (products[prodIndex].seller) {
+        products[prodIndex].seller.reviewsCount = reviewsCount;
+        products[prodIndex].seller.rating = avgRating;
+      }
+      writeJsonFile(PRODUCTS_FILE, products);
+      return res.json({ success: true, productId, reviewId, product: products[prodIndex] });
+    }
+    res.status(404).json({ error: "Product not found" });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to delete review" });
   }
 });
 app.get(["/api/auth/check-unique", "/api/users/check-unique"], (req, res) => {

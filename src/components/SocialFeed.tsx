@@ -430,11 +430,10 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
                 <div className="space-y-2">
                   {post.comments && post.comments.length > 0 ? (
                     post.comments.map(comment => {
-                      const canDelete = currentUser && (
+                      // Strictly restrict comment deletion to the comment author only
+                      const canDelete = currentUser && currentUser.id !== 'guest' && (
                         (comment.username && currentUser.username && comment.username.toLowerCase() === currentUser.username.toLowerCase()) ||
-                        (comment.userId && currentUser.id && comment.userId === currentUser.id) ||
-                        (post.author && post.author.username && currentUser.username && post.author.username.toLowerCase() === currentUser.username.toLowerCase()) ||
-                        (post.userId && currentUser.id && post.userId === currentUser.id)
+                        (comment.userId && currentUser.id && comment.userId === currentUser.id)
                       );
 
                       return (
