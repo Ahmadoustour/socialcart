@@ -171,12 +171,20 @@ function loadUserConversations(userId: string, username?: string): Conversation[
 }
 
 function loadUserNotifications(userId: string): NotificationItem[] {
+  // Clean up legacy key
+  try {
+    localStorage.removeItem('socialcart_notifications');
+  } catch {}
+
   const userKey = getUserStorageKey('socialcart_notifications', userId);
   const saved = localStorage.getItem(userKey);
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) return parsed.filter(n => n && n.id);
+      if (Array.isArray(parsed)) {
+        // Only load pure notifications (orders, security, disputes); never message notifications
+        return parsed.filter(n => n && n.id && !n.id.startsWith('notif_msg_') && !n.targetConvId);
+      }
     } catch {}
   }
   return [];
@@ -747,16 +755,17 @@ export default function App() {
   }, [activeTab]);
 
   // Derived counts with dynamic clearing when opened (and 0 when logged out)
-  const unreadSocialMessagesCount = isLoggedIn 
-    ? conversations.filter(c => c.type === 'social').reduce((sum, c) => sum + c.unreadCount, 0) 
+  // Explicit requirement: The bottom tab badge displays the count of distinct PEOPLE who messaged me
+  const unreadSocialSendersCount = isLoggedIn 
+    ? conversations.filter(c => c.type === 'social' && c.unreadCount > 0).length 
     : 0;
-  const unreadMarketMessagesCount = isLoggedIn 
-    ? conversations.filter(c => c.type === 'market').reduce((sum, c) => sum + c.unreadCount, 0) 
+  const unreadMarketSendersCount = isLoggedIn 
+    ? conversations.filter(c => c.type === 'market' && c.unreadCount > 0).length 
     : 0;
-  const totalUnreadMessagesCount = isLoggedIn
-    ? (unreadSocialMessagesCount + unreadMarketMessagesCount)
+  const totalUnreadSendersCount = isLoggedIn
+    ? conversations.filter(c => c.unreadCount > 0).length
     : 0;
-  const unreadMessagesCount = activeSection === 'market' ? unreadMarketMessagesCount : unreadSocialMessagesCount;
+  const unreadSendersCount = activeSection === 'market' ? unreadMarketSendersCount : unreadSocialSendersCount;
 
   const unreadNotifsCount = isLoggedIn ? notifications.filter(n => !n.isRead).length : 0;
   const cartTotalCount = cartItems.reduce((sum, i) => sum + i.quantity, 0);
@@ -1331,6 +1340,8 @@ export default function App() {
       isMe: true
     };
 
+    let targetConv = conversations.find(c => c.id === conversationId);
+
     setConversations(prev => prev.map(c => {
       if (c.id === conversationId) {
         return {
@@ -1343,6 +1354,66 @@ export default function App() {
       }
       return c;
     }));
+
+    // Generate incoming simulation reply & instant notification from participant
+    if (targetConv) {
+      const convParticipantName = targetConv.participantDisplayName || targetConv.participantUsername;
+      const convType = targetConv.type;
+      const relatedProd = targetConv.relatedProductTitle;
+
+      setTimeout(() => {
+        const replyIso = new Date().toISOString();
+        const replyText = convType === 'market' 
+          ? (relatedProd ? `أهلاً بك بخصوص "${relatedProd}"! المنتج متوفر والتسليم فوري مع كامل التحديثات والدعم.` : `أهلاً بك! الاستفسار مسجل وسأقوم بمساعدتك بكل سرور.`)
+          : `شكراً لتواصلك يا ${currentUser.displayName}! وصلتك رسالتك وسأوافيك بالتفاصيل قريباً.`;
+
+        const incomingMsg: Message = {
+          id: `msg_rep_${Date.now()}`,
+          senderId: targetConv.participantId,
+          senderUsername: targetConv.participantUsername,
+          senderAvatar: targetConv.participantAvatar,
+          text: replyText,
+          createdAt: replyIso,
+          isMe: false
+        };
+
+        setConversations(prev => prev.map(c => {
+          if (c.id === conversationId) {
+            // Check if user is currently looking at this active conversation
+            const isCurrentlyViewing = activeTab === 'messages' && 
+              (c.type === 'market' ? selectedMarketConvId === conversationId : selectedSocialConvId === conversationId);
+
+            return {
+              ...c,
+              lastMessage: replyText,
+              lastMessageTime: replyIso,
+              unreadCount: isCurrentlyViewing ? 0 : (c.unreadCount + 1),
+              messages: [...c.messages, incomingMsg]
+            };
+          }
+          return c;
+        }));
+      }, 1200);
+    }
+  };
+
+  const handleDeleteConversation = (conversationId: string) => {
+    setConversations(prev => {
+      const filtered = prev.filter(c => c.id !== conversationId);
+      const userKey = getUserStorageKey('socialcart_conversations', currentUser.id);
+      localStorage.setItem(userKey, JSON.stringify(filtered));
+      return filtered;
+    });
+
+    if (selectedMarketConvId === conversationId) {
+      setSelectedMarketConvId(null);
+    }
+    if (selectedSocialConvId === conversationId) {
+      setSelectedSocialConvId(null);
+    }
+
+    // Also remove notifications related to this deleted conversation
+    setNotifications(prev => prev.filter(n => n.targetConvId !== conversationId));
   };
 
   const handleStartNewConversation = (
@@ -1422,6 +1493,42 @@ export default function App() {
       setSelectedSocialConvId(newConvId);
     }
     setActiveTab('messages');
+
+    if (trimmedMessage) {
+      // Simulate reply from the other participant
+      setTimeout(() => {
+        const replyIso = new Date().toISOString();
+        const replyText = type === 'market'
+          ? (productTitle ? `أهلاً بك! بخصوص استفسارك عن ${productTitle}، أنا في خدمتك وسأزودك بكافة التفاصيل فوراً.` : `أهلاً بك! تلقيت استفسارك وسأرد عليك بأقرب وقت.`)
+          : `أهلاً بك يا ${currentUser.displayName}! تشرفت بمحادثتك.`;
+
+        const incomingMsg: Message = {
+          id: `msg_rep_${Date.now()}`,
+          senderId: `usr_${cleanUsername}`,
+          senderUsername: cleanUsername,
+          senderAvatar: participantAvatar,
+          text: replyText,
+          createdAt: replyIso,
+          isMe: false
+        };
+
+        setConversations(prev => prev.map(c => {
+          if (c.id === newConvId) {
+            const isCurrentlyViewing = activeTab === 'messages' && 
+              (c.type === 'market' ? selectedMarketConvId === newConvId : selectedSocialConvId === newConvId);
+
+            return {
+              ...c,
+              lastMessage: replyText,
+              lastMessageTime: replyIso,
+              unreadCount: isCurrentlyViewing ? 0 : (c.unreadCount + 1),
+              messages: [...c.messages, incomingMsg]
+            };
+          }
+          return c;
+        }));
+      }, 1500);
+    }
   };
 
   const handleOpenDirectChat = (
@@ -1633,12 +1740,17 @@ export default function App() {
         onOpenAccountMenu={() => setIsAccountMenuOpen(true)}
         onLogout={handleLogout}
         unreadNotifsCount={unreadNotifsCount}
-        unreadMessagesCount={totalUnreadMessagesCount}
+        unreadMessagesCount={totalUnreadSendersCount}
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode(!darkMode)}
         notifications={notifications}
         onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
         onMarkNotificationRead={handleMarkNotificationRead}
+        onSelectNotification={(notif) => {
+          if (notif.linkTab) {
+            handleSelectTab(notif.linkTab);
+          }
+        }}
       />
 
       {/* Main View Container with bottom padding for BottomNavBar */}
@@ -1738,6 +1850,7 @@ export default function App() {
               }}
               onMarkConversationRead={handleMarkConversationRead}
               onMarkAllConversationsRead={handleMarkAllConversationsRead}
+              onDeleteConversation={handleDeleteConversation}
               onNavigateToMarket={() => {
                 setActiveSection('market');
                 setActiveTab('marketplace');
@@ -1934,8 +2047,8 @@ export default function App() {
         onSelectTab={handleSelectTab}
         onSwitchSection={(section) => setActiveSection(section)}
         cartBadgeCount={cartBadgeCount}
-        unreadMessagesCount={unreadSocialMessagesCount}
-        unreadMarketMessagesCount={unreadMarketMessagesCount}
+        unreadMessagesCount={unreadSocialSendersCount}
+        unreadMarketMessagesCount={unreadMarketSendersCount}
         onOpenCreateModal={() => {
           if (!isLoggedIn) {
             setIsAuthModalOpen(true);

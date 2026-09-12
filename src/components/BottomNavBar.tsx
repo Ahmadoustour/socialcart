@@ -93,6 +93,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
                   onSelectTab('messages');
                 }
               }}
+              title={unreadMessagesCount > 0 ? `${unreadMessagesCount} أشخاص أرسلوا لك رسائل` : 'الرسائل'}
               className={`flex flex-col items-center justify-center flex-1 py-1.5 relative transition select-none ${
                 activeTab === 'messages'
                   ? 'text-indigo-600 dark:text-indigo-400'
@@ -217,6 +218,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
                   onSelectTab('messages');
                 }
               }}
+              title={marketUnread > 0 ? `${marketUnread} أشخاص أرسلوا لك استفسارات في المتجر` : 'رسائل المتجر'}
               className={`flex flex-col items-center justify-center flex-1 py-1.5 relative transition select-none ${
                 activeTab === 'messages'
                   ? 'text-emerald-600 dark:text-emerald-400'

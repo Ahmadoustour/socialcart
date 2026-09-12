@@ -32,6 +32,7 @@ interface HeaderProps {
   notifications: NotificationItem[];
   onMarkAllNotificationsRead?: () => void;
   onMarkNotificationRead?: (notifId: string) => void;
+  onSelectNotification?: (notif: NotificationItem) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -50,7 +51,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleDarkMode,
   notifications,
   onMarkAllNotificationsRead,
-  onMarkNotificationRead
+  onMarkNotificationRead,
+  onSelectNotification
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
@@ -192,7 +194,11 @@ export const Header: React.FC<HeaderProps> = ({
                               return;
                             }
                             if (onMarkNotificationRead) onMarkNotificationRead(notif.id);
-                            if (notif.linkTab) onSelectTab(notif.linkTab);
+                            if (onSelectNotification) {
+                              onSelectNotification(notif);
+                            } else if (notif.linkTab) {
+                              onSelectTab(notif.linkTab);
+                            }
                             setShowNotifDropdown(false);
                           }}
                           className={`p-2.5 rounded-xl text-xs cursor-pointer transition ${

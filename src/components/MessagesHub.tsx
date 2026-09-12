@@ -13,7 +13,8 @@ import {
   Sparkles,
   ArrowRight,
   Play,
-  Maximize2
+  Maximize2,
+  Trash2
 } from 'lucide-react';
 import { Conversation, User, MediaItem } from '../types';
 import { scanUrlOrFile } from '../utils/security';
@@ -32,6 +33,7 @@ interface MessagesHubProps {
   onBackToList?: () => void;
   onMarkConversationRead?: (conversationId: string) => void;
   onMarkAllConversationsRead?: (type?: 'social' | 'market') => void;
+  onDeleteConversation?: (conversationId: string) => void;
   onNavigateToMarket?: () => void;
   onNavigateToFeed?: () => void;
 }
@@ -47,6 +49,7 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
   onBackToList,
   onMarkConversationRead,
   onMarkAllConversationsRead,
+  onDeleteConversation,
   onNavigateToMarket,
   onNavigateToFeed
 }) => {
@@ -248,7 +251,24 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
     setNewChatInitialText('');
   };
 
+  // Delete chat confirmation modal state
+  const [chatToDelete, setChatToDelete] = useState<{ id: string; name: string } | null>(null);
+
+  const handleConfirmDeleteChat = () => {
+    if (!chatToDelete) return;
+    if (onDeleteConversation) {
+      onDeleteConversation(chatToDelete.id);
+    }
+    if (activeConvId === chatToDelete.id) {
+      setActiveConvId('');
+      setShowMobileChat(false);
+      if (onBackToList) onBackToList();
+    }
+    setChatToDelete(null);
+  };
+
   const unreadSectionCount = modeConversations.reduce((sum, c) => sum + c.unreadCount, 0);
+  const unreadSectionSendersCount = modeConversations.filter(c => c.unreadCount > 0).length;
 
   return (
     <div className="max-w-6xl mx-auto pb-16 animate-fadeIn">
@@ -273,13 +293,20 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                 <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
                   {isMarket ? 'استفسارات المتجر والمنتجات' : 'المحادثات الاجتماعية'}
                 </h2>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                  isMarket 
-                    ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
-                    : 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
-                }`}>
-                  {isMarket ? '💡 محمية بضمان استرجاع الأموال' : '💬 محادثات خاصة ومباشرة'}
-                </span>
+                {unreadSectionSendersCount > 0 ? (
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-rose-500 text-white shadow-xs flex items-center gap-1">
+                    <span>{unreadSectionSendersCount}</span>
+                    <span>{unreadSectionSendersCount === 1 ? 'شخص راسلك' : 'أشخاص راسلوك'}</span>
+                  </span>
+                ) : (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    isMarket 
+                      ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' 
+                      : 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
+                  }`}>
+                    {isMarket ? '💡 استفسارات البائعين' : '💬 محادثات مباشرة'}
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 {isMarket 
@@ -388,6 +415,7 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
             ) : (
               filteredConversations.map(conv => {
                 const isActive = conv.id === activeConvId;
+                const incomingCount = (conv.messages || []).filter(m => !m.isMe).length;
 
                 return (
                   <div
@@ -408,6 +436,14 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                         alt={conv.participantDisplayName}
                         className="w-11 h-11 rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700"
                       />
+                      {conv.unreadCount > 0 && (
+                        <span
+                          className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] min-w-[19px] h-[19px] px-1 rounded-full flex items-center justify-center font-bold shadow-md animate-pulse z-10 ring-2 ring-white dark:ring-slate-900"
+                          title={`${conv.unreadCount} رسائل جديدة`}
+                        >
+                          {conv.unreadCount > 99 ? '+99' : conv.unreadCount}
+                        </span>
+                      )}
                       {isMarket ? (
                         <div className="absolute -bottom-1 -left-1 bg-emerald-600 text-white p-0.5 rounded-md text-[9px] shadow-xs">
                           <Store className="w-2.5 h-2.5" />
@@ -446,16 +482,46 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                       )}
 
                       <div className="flex items-center justify-between mt-1">
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex-1 ml-2">
                           {conv.lastMessage}
                         </p>
-                        {conv.unreadCount > 0 && (
-                          <span className={`text-white text-[9px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center font-bold shrink-0 mr-1 ${
-                            isMarket ? 'bg-emerald-600' : 'bg-indigo-600'
-                          }`}>
-                            {conv.unreadCount}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {/* Unread badge with exact number of new messages sent to you */}
+                          {conv.unreadCount > 0 ? (
+                            <span 
+                              className="text-white text-[10px] min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center font-bold shadow-xs bg-rose-500 animate-pulse"
+                              title={`وصلتك ${conv.unreadCount} رسائل جديدة من هذا الشخص`}
+                            >
+                              {conv.unreadCount > 99 ? '+99' : conv.unreadCount}
+                            </span>
+                          ) : (
+                            /* Total messages sent to you in this chat */
+                            incomingCount > 0 && (
+                              <span 
+                                className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/90 px-2 py-0.5 rounded-md flex items-center gap-1 border border-slate-200/60 dark:border-slate-700/60"
+                                title={`إجمالي الرسائل التي أُرسلت إليك في هذا الشات: ${incomingCount}`}
+                              >
+                                <span className="font-black text-slate-700 dark:text-slate-200">{incomingCount}</span>
+                                <span className="text-[9px] font-medium text-slate-400">{incomingCount === 1 ? 'رسالة لك' : 'رسائل لك'}</span>
+                              </span>
+                            )
+                          )}
+                          {/* Delete conversation button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setChatToDelete({
+                                id: conv.id,
+                                name: conv.participantDisplayName
+                              });
+                            }}
+                            className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition opacity-80 hover:opacity-100"
+                            title="حذف هذه المحادثة"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -518,12 +584,37 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                   </div>
                 </div>
 
-                <div className="text-left text-xs">
+                <div className="flex items-center gap-2 shrink-0">
                   {isMarket && activeConversation.relatedProductTitle && (
                     <span className="hidden sm:inline-block text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-xl border border-emerald-200 dark:border-emerald-800/80 max-w-[220px] truncate">
                       {activeConversation.relatedProductTitle}
                     </span>
                   )}
+                  {(() => {
+                    const activeIncoming = (activeConversation.messages || []).filter(m => !m.isMe).length;
+                    return activeIncoming > 0 ? (
+                      <span 
+                        className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700/80" 
+                        title={`إجمالي الرسائل الواردة إليك في هذه المحادثة: ${activeIncoming}`}
+                      >
+                        <span className="font-black text-indigo-600 dark:text-indigo-400">{activeIncoming}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">{activeIncoming === 1 ? 'رسالة واردة لك' : 'رسائل واردة لك'}</span>
+                      </span>
+                    ) : null;
+                  })()}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChatToDelete({
+                        id: activeConversation.id,
+                        name: activeConversation.participantDisplayName
+                      });
+                    }}
+                    className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                    title="حذف هذه المحادثة"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
 
@@ -842,6 +933,45 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
               >
                 <Send className="w-4 h-4" />
                 <span>{isMarket ? 'إرسال وبدء استفسار المتجر' : 'إرسال وبدء المحادثة'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Deleting Chat */}
+      {chatToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl p-5 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
+              <div className="w-10 h-10 rounded-2xl bg-rose-50 dark:bg-rose-950/60 flex items-center justify-center shrink-0 border border-rose-200/60 dark:border-rose-800/60">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">حذف المحادثة</h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">هذا الإجراء نهائي ولا يمكن التراجع عنه</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              هل أنت متأكد من رغبتك في حذف محادثتك مع <span className="font-bold text-slate-900 dark:text-white">{chatToDelete.name}</span>؟ سيتم مسح الرسائل وسجل المحادثة بالكامل.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setChatToDelete(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteChat}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-sm shadow-rose-600/30 transition flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>نعم، حذف المحادثة</span>
               </button>
             </div>
           </div>

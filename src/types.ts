@@ -167,6 +167,8 @@ export interface NotificationItem {
   isRead: boolean;
   createdAt: string;
   linkTab?: string;
+  targetConvId?: string;
+  targetSection?: 'social' | 'market';
 }
 
 export interface DisputeReport {
