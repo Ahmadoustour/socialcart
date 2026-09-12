@@ -134,7 +134,7 @@ function loadUserConversations(userId: string, username?: string): Conversation[
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
+      if (Array.isArray(parsed) && parsed.length > 0) {
         userList = parsed.filter(c => {
           if (!c || !c.id) return false;
           if (deletedSet.has(c.id)) return false; // Strictly exclude deleted conversations!
@@ -153,11 +153,14 @@ function loadUserConversations(userId: string, username?: string): Conversation[
         });
       }
     } catch {}
-  } else {
-    // Seed initial conversations for testing and preview so unread counters are demonstrated
+  }
+
+  // If userList is empty, seed demo conversations with unread badges
+  if (userList.length === 0) {
     userList = INITIAL_CONVERSATIONS.filter(c => !deletedSet.has(c.id)).map(c => ({
       ...c,
       userId,
+      unreadCount: c.unreadCount ?? 1,
       participants: Array.from(new Set([cleanUser || 'user', c.participantUsername.toLowerCase()]))
     }));
     try {
@@ -190,6 +193,26 @@ function loadUserConversations(userId: string, username?: string): Conversation[
                 participantAvatar: poolConv.creatorAvatar || poolConv.participantAvatar,
               };
             }
+
+            // CRITICAL FIX: Determine recipient unread count correctly
+            if (poolConv.unreadCountBy && typeof poolConv.unreadCountBy[cleanUser] === 'number') {
+              adapted.unreadCount = poolConv.unreadCountBy[cleanUser];
+            } else if (adapted.messages && adapted.messages.length > 0) {
+              const lastMsg = adapted.messages[adapted.messages.length - 1];
+              if (lastMsg.senderUsername?.toLowerCase() !== cleanUser) {
+                // Incoming message from someone else: recipient has not read it yet!
+                adapted.unreadCount = adapted.unreadCount > 0 ? adapted.unreadCount : 1;
+              }
+            }
+
+            // Dynamically recalculate isMe for the currently viewing user
+            if (adapted.messages) {
+              adapted.messages = adapted.messages.map(m => ({
+                ...m,
+                isMe: m.senderUsername?.toLowerCase() === cleanUser
+              }));
+            }
+
             if (existingIdx >= 0) {
               userList[existingIdx] = adapted;
             } else {
@@ -876,6 +899,22 @@ export default function App() {
     return senders.size;
   }, [conversations]);
 
+  const unreadSocialMessagesCount = useMemo(() => {
+    return conversations
+      .filter(c => c.type === 'social')
+      .reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+  }, [conversations]);
+
+  const unreadMarketMessagesCount = useMemo(() => {
+    return conversations
+      .filter(c => c.type === 'market')
+      .reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+  }, [conversations]);
+
+  const totalUnreadMessagesCount = useMemo(() => {
+    return conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+  }, [conversations]);
+
   const unreadSendersCount = activeSection === 'market' ? unreadMarketSendersCount : unreadSocialSendersCount;
 
   const unreadNotifsCount = isLoggedIn ? notifications.filter(n => !n.isRead).length : 0;
@@ -904,9 +943,19 @@ export default function App() {
     setConversations(prev => {
       const target = prev.find(c => c.id === convId);
       if (!target || target.unreadCount === 0) return prev;
-      return prev.map(c => c.id === convId ? { ...c, unreadCount: 0 } : c);
+      return prev.map(c => {
+        if (c.id === convId) {
+          const userKey = (currentUser.username || '').toLowerCase();
+          const nextUnreadBy = { ...(c.unreadCountBy || {}) };
+          if (userKey) {
+            nextUnreadBy[userKey] = 0;
+          }
+          return { ...c, unreadCount: 0, unreadCountBy: nextUnreadBy };
+        }
+        return c;
+      });
     });
-  }, []);
+  }, [currentUser.username]);
 
   const handleMarkAllConversationsRead = useCallback((type?: 'social' | 'market') => {
     const targetType = type || activeSection;
@@ -1558,20 +1607,34 @@ export default function App() {
       isMe: true
     };
 
-    let targetConv = conversations.find(c => c.id === conversationId);
+    const targetConv = conversations.find(c => c.id === conversationId);
+    const otherUser = targetConv?.participantUsername?.toLowerCase() || '';
 
-    setConversations(prev => prev.map(c => {
-      if (c.id === conversationId) {
-        return {
-          ...c,
-          lastMessage: text || (media?.length ? 'ملف وسائط مرفق' : ''),
-          lastMessageTime: nowIso,
-          unreadCount: 0,
-          messages: [...c.messages, newMsg]
-        };
-      }
-      return c;
-    }));
+    setConversations(prev => {
+      const next = prev.map(c => {
+        if (c.id === conversationId) {
+          const nextUnreadBy = { ...(c.unreadCountBy || {}) };
+          if (currentUser.username) {
+            nextUnreadBy[currentUser.username.toLowerCase()] = 0;
+          }
+          if (otherUser) {
+            nextUnreadBy[otherUser] = (nextUnreadBy[otherUser] || 0) + 1;
+          }
+          return {
+            ...c,
+            lastMessage: text || (media?.length ? 'ملف وسائط مرفق' : ''),
+            lastMessageTime: nowIso,
+            unreadCount: 0,
+            unreadCountBy: nextUnreadBy,
+            messages: [...c.messages, newMsg]
+          };
+        }
+        return c;
+      });
+      const userKey = getUserStorageKey('socialcart_conversations', currentUser.id);
+      localStorage.setItem(userKey, JSON.stringify(next));
+      return next;
+    });
   };
 
   const handleDeleteConversation = (conversationId: string) => {
@@ -1611,17 +1674,28 @@ export default function App() {
   };
 
   const handleToggleConversationUnread = (conversationId: string) => {
-    setConversations(prev => prev.map(c => {
-      if (c.id === conversationId) {
-        const currentUnread = c.unreadCount || 0;
-        const newUnread = currentUnread > 0 ? 0 : 1;
-        return {
-          ...c,
-          unreadCount: newUnread
-        };
-      }
-      return c;
-    }));
+    setConversations(prev => {
+      const next = prev.map(c => {
+        if (c.id === conversationId) {
+          const currentUnread = c.unreadCount || 0;
+          const newUnread = currentUnread > 0 ? 0 : 1;
+          const userKey = (currentUser.username || '').toLowerCase();
+          const nextUnreadBy = { ...(c.unreadCountBy || {}) };
+          if (userKey) {
+            nextUnreadBy[userKey] = newUnread;
+          }
+          return {
+            ...c,
+            unreadCount: newUnread,
+            unreadCountBy: nextUnreadBy
+          };
+        }
+        return c;
+      });
+      const key = getUserStorageKey('socialcart_conversations', currentUser.id);
+      localStorage.setItem(key, JSON.stringify(next));
+      return next;
+    });
   };
 
   const handleStartNewConversation = (
@@ -2220,8 +2294,8 @@ export default function App() {
         onSelectTab={handleSelectTab}
         onSwitchSection={handleSwitchSection}
         cartBadgeCount={cartBadgeCount}
-        unreadMessagesCount={unreadSocialSendersCount}
-        unreadMarketMessagesCount={unreadMarketSendersCount}
+        unreadMessagesCount={unreadSocialMessagesCount > 0 ? unreadSocialMessagesCount : totalUnreadMessagesCount}
+        unreadMarketMessagesCount={unreadMarketMessagesCount > 0 ? unreadMarketMessagesCount : totalUnreadMessagesCount}
         onOpenCreateModal={() => {
           if (!isLoggedIn) {
             setIsAuthModalOpen(true);

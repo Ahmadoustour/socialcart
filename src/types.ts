@@ -160,6 +160,7 @@ export interface Conversation {
   lastMessage: string;
   lastMessageTime: string;
   unreadCount: number;
+  unreadCountBy?: Record<string, number>;
   messages: Message[];
 }
 

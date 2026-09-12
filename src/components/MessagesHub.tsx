@@ -443,7 +443,9 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                       />
                       {hasUnread && (
                         <span
-                          className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] min-w-[19px] h-[19px] px-1 rounded-full flex items-center justify-center font-black shadow-md ring-2 ring-white dark:ring-slate-900 leading-none z-10 animate-pulse"
+                          className={`absolute -top-1.5 -right-1.5 text-white text-[9px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center font-bold shadow-xs leading-none z-10 select-none ${
+                            isMarket ? 'bg-emerald-500' : 'bg-indigo-600'
+                          }`}
                           title={`${conv.unreadCount} رسائل جديدة`}
                         >
                           {conv.unreadCount > 99 ? '+99' : conv.unreadCount}
@@ -474,7 +476,9 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                         <div className="flex items-center gap-1.5 shrink-0">
                           {hasUnread && (
                             <span 
-                              className="bg-rose-500 text-white text-[10px] font-black min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center shadow-xs ring-1 ring-white dark:ring-slate-800 leading-none"
+                              className={`text-white text-[9px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center font-bold shadow-xs leading-none ${
+                                isMarket ? 'bg-emerald-500' : 'bg-indigo-600'
+                              }`}
                               title={`${conv.unreadCount} رسائل غير مقروءة`}
                             >
                               {conv.unreadCount > 99 ? '+99' : conv.unreadCount}
@@ -505,18 +509,35 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                           {conv.lastMessage}
                         </p>
                         <div className="flex items-center gap-1 shrink-0">
+                          {/* Unread counter in the exact same place as mark as unread */}
+                          {hasUnread && (
+                            <span 
+                              className={`text-white text-[9px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center font-bold shadow-xs leading-none select-none ${
+                                isMarket ? 'bg-emerald-500' : 'bg-indigo-600'
+                              }`}
+                              title={`${conv.unreadCount} رسائل غير مقروءة`}
+                            >
+                              {conv.unreadCount > 99 ? '+99' : conv.unreadCount}
+                            </span>
+                          )}
+
                           {/* Toggle unread status button */}
                           {onToggleUnread && (
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
+                                if (activeConvId === conv.id) {
+                                  setActiveConvId('');
+                                }
                                 onToggleUnread(conv.id);
                               }}
                               className={`p-1 rounded-lg transition ${
                                 hasUnread
-                                  ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100'
-                                  : 'text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                  ? (isMarket
+                                      ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 hover:bg-emerald-200'
+                                      : 'text-indigo-700 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-950/60 hover:bg-indigo-200')
+                                  : 'text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                               }`}
                               title={hasUnread ? 'تحديد كمقروء' : 'تحديد كغير مقروء'}
                             >
