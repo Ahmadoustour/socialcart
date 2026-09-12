@@ -152,6 +152,9 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
           posts.map(post => {
           const activeIndex = activeMediaIndex[post.id] || 0;
           const currentMedia = post.media?.[activeIndex];
+          const isLiked = Array.isArray(post.likedUserIds)
+            ? post.likedUserIds.includes(currentUser.id)
+            : Boolean(post.likedByMe);
 
           return (
             <article 
@@ -353,13 +356,13 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
                 <button
                   onClick={() => onLikePost(post.id)}
                   className={`py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition ${
-                    post.likedByMe
+                    isLiked
                       ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'
                       : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
                   }`}
                 >
-                  <Heart className={`w-4 h-4 ${post.likedByMe ? 'fill-rose-500 text-rose-500' : ''}`} />
-                  <span>{post.likedByMe ? 'معجب' : 'أعجبني'}</span>
+                  <Heart className={`w-4 h-4 ${isLiked ? 'fill-rose-500 text-rose-500' : ''}`} />
+                  <span>{isLiked ? 'معجب' : 'أعجبني'}</span>
                 </button>
 
                 <button

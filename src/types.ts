@@ -56,6 +56,7 @@ export interface Post {
   media: MediaItem[];
   likesCount: number;
   likedByMe: boolean;
+  likedUserIds?: string[];
   sharesCount: number;
   comments: Comment[];
   createdAt: string;
@@ -97,6 +98,7 @@ export interface Product {
   salesCount: number;
   likesCount: number;
   likedByMe: boolean;
+  likedUserIds?: string[];
   createdAt: string;
   escrowProtected: boolean;
   reviews: SellerReview[];

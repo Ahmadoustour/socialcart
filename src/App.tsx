@@ -407,6 +407,15 @@ export default function App() {
       // 4. Notifications: Load user-specific notifications
       setNotifications(loadUserNotifications(currentId));
 
+      // 5. Update posts likedByMe flag for current user
+      setPosts(prev => prev.map(p => {
+        const likedIds = Array.isArray(p.likedUserIds) ? p.likedUserIds : [];
+        return {
+          ...p,
+          likedByMe: likedIds.includes(currentId)
+        };
+      }));
+
       previousUserIdRef.current = currentId;
     }
   }, [currentUser.id, currentUser.username, currentUser.email]);
@@ -841,13 +850,35 @@ export default function App() {
   // 1. Social Interactions Handlers
   const handleLikePost = async (postId: string) => {
     let targetPost: Post | null = null;
+    const currentUserId = currentUser.id;
+
     setPosts(prev => prev.map(p => {
       if (p.id === postId) {
-        const liked = !p.likedByMe;
-        const updated = {
+        // Derive likedUserIds array safely
+        const existingLikedUserIds: string[] = Array.isArray(p.likedUserIds)
+          ? p.likedUserIds
+          : (p.likedByMe ? [currentUserId] : []);
+
+        const isCurrentlyLikedByMe = existingLikedUserIds.includes(currentUserId) || (p.likedByMe && existingLikedUserIds.length === 0);
+
+        let newLikedUserIds: string[];
+        let newLikesCount: number;
+
+        if (isCurrentlyLikedByMe) {
+          // Remove like for current user
+          newLikedUserIds = existingLikedUserIds.filter(id => id !== currentUserId);
+          newLikesCount = Math.max(0, (typeof p.likesCount === 'number' ? p.likesCount : existingLikedUserIds.length) - 1);
+        } else {
+          // Add like for current user
+          newLikedUserIds = Array.from(new Set([...existingLikedUserIds, currentUserId]));
+          newLikesCount = Math.max(newLikedUserIds.length, (typeof p.likesCount === 'number' ? p.likesCount : 0) + 1);
+        }
+
+        const updated: Post = {
           ...p,
-          likedByMe: liked,
-          likesCount: liked ? p.likesCount + 1 : Math.max(0, p.likesCount - 1)
+          likedUserIds: newLikedUserIds,
+          likedByMe: !isCurrentlyLikedByMe,
+          likesCount: newLikesCount
         };
         targetPost = updated;
         return updated;
@@ -1386,47 +1417,6 @@ export default function App() {
       }
       return c;
     }));
-
-    // Generate incoming simulation reply & instant notification from participant
-    if (targetConv) {
-      const convParticipantName = targetConv.participantDisplayName || targetConv.participantUsername;
-      const convType = targetConv.type;
-      const relatedProd = targetConv.relatedProductTitle;
-
-      setTimeout(() => {
-        const replyIso = new Date().toISOString();
-        const replyText = convType === 'market' 
-          ? (relatedProd ? `أهلاً بك بخصوص "${relatedProd}"! المنتج متوفر والتسليم فوري مع كامل التحديثات والدعم.` : `أهلاً بك! الاستفسار مسجل وسأقوم بمساعدتك بكل سرور.`)
-          : `شكراً لتواصلك يا ${currentUser.displayName}! وصلتك رسالتك وسأوافيك بالتفاصيل قريباً.`;
-
-        const incomingMsg: Message = {
-          id: `msg_rep_${Date.now()}`,
-          senderId: targetConv.participantId,
-          senderUsername: targetConv.participantUsername,
-          senderAvatar: targetConv.participantAvatar,
-          text: replyText,
-          createdAt: replyIso,
-          isMe: false
-        };
-
-        setConversations(prev => prev.map(c => {
-          if (c.id === conversationId) {
-            // Check if user is currently looking at this active conversation
-            const isCurrentlyViewing = activeTab === 'messages' && 
-              (c.type === 'market' ? selectedMarketConvId === conversationId : selectedSocialConvId === conversationId);
-
-            return {
-              ...c,
-              lastMessage: replyText,
-              lastMessageTime: replyIso,
-              unreadCount: isCurrentlyViewing ? 0 : (c.unreadCount + 1),
-              messages: [...c.messages, incomingMsg]
-            };
-          }
-          return c;
-        }));
-      }, 1200);
-    }
   };
 
   const handleDeleteConversation = (conversationId: string) => {
@@ -1525,42 +1515,6 @@ export default function App() {
       setSelectedSocialConvId(newConvId);
     }
     setActiveTab('messages');
-
-    if (trimmedMessage) {
-      // Simulate reply from the other participant
-      setTimeout(() => {
-        const replyIso = new Date().toISOString();
-        const replyText = type === 'market'
-          ? (productTitle ? `أهلاً بك! بخصوص استفسارك عن ${productTitle}، أنا في خدمتك وسأزودك بكافة التفاصيل فوراً.` : `أهلاً بك! تلقيت استفسارك وسأرد عليك بأقرب وقت.`)
-          : `أهلاً بك يا ${currentUser.displayName}! تشرفت بمحادثتك.`;
-
-        const incomingMsg: Message = {
-          id: `msg_rep_${Date.now()}`,
-          senderId: `usr_${cleanUsername}`,
-          senderUsername: cleanUsername,
-          senderAvatar: participantAvatar,
-          text: replyText,
-          createdAt: replyIso,
-          isMe: false
-        };
-
-        setConversations(prev => prev.map(c => {
-          if (c.id === newConvId) {
-            const isCurrentlyViewing = activeTab === 'messages' && 
-              (c.type === 'market' ? selectedMarketConvId === newConvId : selectedSocialConvId === newConvId);
-
-            return {
-              ...c,
-              lastMessage: replyText,
-              lastMessageTime: replyIso,
-              unreadCount: isCurrentlyViewing ? 0 : (c.unreadCount + 1),
-              messages: [...c.messages, incomingMsg]
-            };
-          }
-          return c;
-        }));
-      }, 1500);
-    }
   };
 
   const handleOpenDirectChat = (
@@ -1772,7 +1726,6 @@ export default function App() {
         onOpenAccountMenu={() => setIsAccountMenuOpen(true)}
         onLogout={handleLogout}
         unreadNotifsCount={unreadNotifsCount}
-        unreadMessagesCount={totalUnreadSendersCount}
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode(!darkMode)}
         notifications={notifications}

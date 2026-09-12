@@ -486,25 +486,14 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                           {conv.lastMessage}
                         </p>
                         <div className="flex items-center gap-1.5 shrink-0">
-                          {/* Unread badge with exact number of new messages sent to you */}
-                          {conv.unreadCount > 0 ? (
+                          {/* Unread badge for this specific chat: shown only when there are unread messages, disappears when read */}
+                          {conv.unreadCount > 0 && (
                             <span 
                               className="text-white text-[10px] min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center font-bold shadow-xs bg-rose-500 animate-pulse"
-                              title={`وصلتك ${conv.unreadCount} رسائل جديدة من هذا الشخص`}
+                              title={`وصلتك ${conv.unreadCount} رسائل جديدة لم تقرأها من هذا الشخص`}
                             >
                               {conv.unreadCount > 99 ? '+99' : conv.unreadCount}
                             </span>
-                          ) : (
-                            /* Total messages sent to you in this chat */
-                            incomingCount > 0 && (
-                              <span 
-                                className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/90 px-2 py-0.5 rounded-md flex items-center gap-1 border border-slate-200/60 dark:border-slate-700/60"
-                                title={`إجمالي الرسائل التي أُرسلت إليك في هذا الشات: ${incomingCount}`}
-                              >
-                                <span className="font-black text-slate-700 dark:text-slate-200">{incomingCount}</span>
-                                <span className="text-[9px] font-medium text-slate-400">{incomingCount === 1 ? 'رسالة لك' : 'رسائل لك'}</span>
-                              </span>
-                            )
                           )}
                           {/* Delete conversation button */}
                           <button
