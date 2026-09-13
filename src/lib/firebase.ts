@@ -3,20 +3,52 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { initializeFirestore, getFirestore, doc, getDocFromServer } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
-import firebaseConfig from "../../firebase-applet-config.json";
+import appletConfig from "../../firebase-applet-config.json";
 
-// Initialize Firebase safely
-export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+// User's custom Firebase environment variables (configured on Vercel / .env)
+const userEnvConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID,
+};
 
-// Initialize Cloud Firestore with experimentalForceLongPolling to avoid proxy/iframe streaming delays
+// Check if user has defined their own Firebase API credentials (e.g. in Vercel)
+const hasUserCustomConfig = Boolean(userEnvConfig.apiKey && userEnvConfig.projectId);
+
+export const activeFirebaseConfig = hasUserCustomConfig
+  ? {
+      apiKey: userEnvConfig.apiKey,
+      authDomain: userEnvConfig.authDomain || `${userEnvConfig.projectId}.firebaseapp.com`,
+      projectId: userEnvConfig.projectId,
+      storageBucket: userEnvConfig.storageBucket || `${userEnvConfig.projectId}.firebasestorage.app`,
+      messagingSenderId: userEnvConfig.messagingSenderId || "",
+      appId: userEnvConfig.appId || "",
+      measurementId: userEnvConfig.measurementId || "",
+    }
+  : appletConfig;
+
+// Initialize Firebase with the user's designated project
+export const app = !getApps().length ? initializeApp(activeFirebaseConfig) : getApp();
+
+// Target database ID: if using user's custom project, use their custom database ID or default
+const customDbId = hasUserCustomConfig
+  ? userEnvConfig.firestoreDatabaseId || undefined
+  : (appletConfig as any).firestoreDatabaseId;
+
 let firestoreDb;
 try {
-  firestoreDb = initializeFirestore(app, {
-    experimentalForceLongPolling: true,
-  }, firebaseConfig.firestoreDatabaseId);
+  firestoreDb = customDbId
+    ? initializeFirestore(app, { experimentalForceLongPolling: true }, customDbId)
+    : initializeFirestore(app, { experimentalForceLongPolling: true });
 } catch {
-  firestoreDb = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  firestoreDb = customDbId ? getFirestore(app, customDbId) : getFirestore(app);
 }
+
 export const db = firestoreDb;
 export const auth = getAuth(app);
 export const storage = getStorage(app);
