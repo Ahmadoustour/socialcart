@@ -1,0 +1,130 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile in SocialCart",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "User unique UID" },
+        "username": { "type": "string", "description": "Unique username", "maxLength": 50 },
+        "displayName": { "type": "string", "description": "Display name", "maxLength": 100 },
+        "email": { "type": "string", "description": "User email address", "maxLength": 150 },
+        "avatar": { "type": "string", "description": "User avatar image URL" },
+        "bio": { "type": "string", "description": "Short bio or description", "maxLength": 300 },
+        "joinedDate": { "type": "string", "description": "Join date" },
+        "isVerifiedSeller": { "type": "boolean", "description": "Verified seller flag" },
+        "sellerRating": { "type": "number", "description": "Seller average rating" },
+        "sellerReviewsCount": { "type": "number", "description": "Count of seller reviews" },
+        "totalSales": { "type": "number", "description": "Total completed sales count" },
+        "trustScore": { "type": "number", "description": "Calculated platform trust score" },
+        "isEmailVerified": { "type": "boolean", "description": "Email verified status" },
+        "twoFactorEnabled": { "type": "boolean", "description": "Two-factor authentication toggle" }
+      },
+      "required": ["id", "username", "displayName", "email"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Social feed post created by a user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Post ID", "maxLength": 100 },
+        "userId": { "type": "string", "description": "Author UID", "maxLength": 128 },
+        "author": { "type": "object", "description": "Author summary" },
+        "title": { "type": "string", "description": "Post title", "maxLength": 200 },
+        "description": { "type": "string", "description": "Post content/body", "maxLength": 5000 },
+        "media": { "type": "array", "description": "Attached media items" },
+        "tags": { "type": "array", "description": "Hashtags and categories" },
+        "likesCount": { "type": "number", "description": "Total likes count" },
+        "likedUserIds": { "type": "array", "description": "Array of user IDs who liked this post" },
+        "sharesCount": { "type": "number", "description": "Total shares count" },
+        "comments": { "type": "array", "description": "Comments list" },
+        "createdAt": { "type": "string", "description": "Creation ISO timestamp" }
+      },
+      "required": ["id", "userId", "description"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Digital or physical product listed in the marketplace",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Product ID", "maxLength": 100 },
+        "title": { "type": "string", "description": "Product title", "maxLength": 200 },
+        "description": { "type": "string", "description": "Product description", "maxLength": 5000 },
+        "price": { "type": "number", "description": "Price in USD" },
+        "category": { "type": "string", "description": "Category slug or name", "maxLength": 50 },
+        "stock": { "type": "number", "description": "Available stock quantity" },
+        "seller": { "type": "object", "description": "Seller profile snapshot" },
+        "media": { "type": "array", "description": "Product gallery images" },
+        "rating": { "type": "number", "description": "Average review rating" },
+        "reviews": { "type": "array", "description": "Product reviews" },
+        "tags": { "type": "array", "description": "Search tags" },
+        "salesCount": { "type": "number", "description": "Completed orders count" },
+        "createdAt": { "type": "string", "description": "Creation ISO timestamp" }
+      },
+      "required": ["id", "title", "price", "category"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Chat thread between users for social or marketplace inquiries",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Conversation ID", "maxLength": 100 },
+        "type": { "type": "string", "description": "Chat type (social or market)" },
+        "participants": { "type": "array", "description": "Participant usernames or IDs" },
+        "participantUsername": { "type": "string", "description": "Target participant username" },
+        "participantDisplayName": { "type": "string", "description": "Target participant display name" },
+        "participantAvatar": { "type": "string", "description": "Target participant avatar" },
+        "participantId": { "type": "string", "description": "Target participant user ID" },
+        "creatorUsername": { "type": "string", "description": "Thread initiator username" },
+        "creatorDisplayName": { "type": "string", "description": "Thread initiator display name" },
+        "creatorAvatar": { "type": "string", "description": "Thread initiator avatar" },
+        "lastMessage": { "type": "string", "description": "Snippet of the last message", "maxLength": 1000 },
+        "lastMessageTime": { "type": "string", "description": "Timestamp of the last message" },
+        "unreadCount": { "type": "number", "description": "Unread count" },
+        "unreadCountBy": { "type": "object", "description": "Unread counts mapped by username" },
+        "productInfo": { "type": "object", "description": "Optional attached product reference" },
+        "messages": { "type": "array", "description": "List of messages in conversation" }
+      },
+      "required": ["id", "type", "participants"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer purchase transaction record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Order ID", "maxLength": 100 },
+        "buyerId": { "type": "string", "description": "Buyer user ID", "maxLength": 128 },
+        "buyerEmail": { "type": "string", "description": "Buyer contact email", "maxLength": 150 },
+        "buyerName": { "type": "string", "description": "Buyer display name", "maxLength": 100 },
+        "items": { "type": "array", "description": "Purchased cart items" },
+        "totalAmount": { "type": "number", "description": "Total paid amount" },
+        "status": { "type": "string", "description": "Order fulfillment status" },
+        "paymentMethod": { "type": "string", "description": "Payment gateway or method" },
+        "createdAt": { "type": "string", "description": "Order timestamp" }
+      },
+      "required": ["id", "buyerId", "items", "totalAmount", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Public user profiles"
+    },
+    "/posts/{postId}": {
+      "schema": "Post",
+      "description": "Social feed posts visible to all users"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Marketplace products visible to all users"
+    },
+    "/conversations/{convId}": {
+      "schema": "Conversation",
+      "description": "Direct chat conversations accessible by participants"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Purchase orders accessible by the buyer or admin"
+    }
+  }
+}

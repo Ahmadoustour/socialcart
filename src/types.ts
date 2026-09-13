@@ -102,6 +102,7 @@ export interface Product {
   createdAt: string;
   escrowProtected: boolean;
   reviews: SellerReview[];
+  rating?: number;
 }
 
 export interface CartItem {
