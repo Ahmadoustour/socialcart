@@ -19,21 +19,6 @@ import { AccountMenuModal } from './components/AccountMenuModal';
 
 import { auth } from './lib/firebase';
 import { onAuthStateChanged, signOut, updatePassword, updateProfile, updateEmail } from 'firebase/auth';
-import {
-  subscribeToPosts,
-  subscribeToProducts,
-  subscribeToConversations,
-  subscribeToOrders,
-  savePostToCloud,
-  deletePostFromCloud,
-  saveProductToCloud,
-  deleteProductFromCloud,
-  saveConversationToCloud,
-  deleteConversationFromCloud,
-  saveOrderToCloud,
-  saveUserToCloud,
-  findUserInCloud
-} from './lib/firestoreService';
 import { 
   User, 
   SavedCard,
@@ -589,61 +574,6 @@ export default function App() {
     localStorage.setItem(key, JSON.stringify(notifications));
   }, [notifications, currentUser.id]);
 
-  // 1. Real-time Cloud Posts Subscription
-  useEffect(() => {
-    const unsubscribe = subscribeToPosts((cloudPosts) => {
-      if (!cloudPosts) return;
-      setPosts(prev => {
-        const currentUserId = currentUser.id;
-        const currentLikedPosts = new Set(
-          prev.filter(p => p.likedByMe).map(p => p.id)
-        );
-
-        return cloudPosts.map(p => {
-          const likedIds = Array.isArray(p.likedUserIds) ? p.likedUserIds : [];
-          const isLiked = (currentUserId && currentUserId !== 'guest' && likedIds.includes(currentUserId)) ||
-            currentLikedPosts.has(p.id);
-          return {
-            ...p,
-            likedByMe: isLiked
-          };
-        });
-      });
-    });
-    return () => unsubscribe();
-  }, [currentUser.id]);
-
-  // 2. Real-time Cloud Products Subscription
-  useEffect(() => {
-    const unsubscribe = subscribeToProducts((cloudProducts) => {
-      if (!cloudProducts) return;
-      setProducts(cloudProducts);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // 3. Real-time Cloud Orders Subscription
-  useEffect(() => {
-    if (!currentUser.id || currentUser.id === 'guest') return;
-    const unsubscribe = subscribeToOrders(currentUser.id, currentUser.email, (cloudOrders) => {
-      if (!cloudOrders) return;
-      setOrders(cloudOrders);
-      const key = getUserStorageKey('socialcart_orders', currentUser.id);
-      localStorage.setItem(key, JSON.stringify(cloudOrders));
-    });
-    return () => unsubscribe();
-  }, [currentUser.id, currentUser.email]);
-
-  // 4. Real-time Cloud Conversations Subscription
-  useEffect(() => {
-    if (!currentUser.username || currentUser.id === 'guest') return;
-    const unsubscribe = subscribeToConversations(currentUser.username, currentUser.id, (cloudConvs) => {
-      if (!cloudConvs) return;
-      setConversations(cloudConvs);
-    });
-    return () => unsubscribe();
-  }, [currentUser.username, currentUser.id]);
-
   // Sync Firebase Auth state & merge with local/server profiles to preserve password, card, bio, etc.
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
@@ -675,18 +605,8 @@ export default function App() {
           (fbUser.email && u.email && u.email.toLowerCase() === fbUser.email.toLowerCase())
         );
 
-        // Also check if Cloud Firestore or server has saved profile for this specific user
+        // Also check if server has saved profile for this specific user
         let serverUser: Partial<User> = {};
-        try {
-          const cloudUser = await findUserInCloud(fbUser.uid);
-          if (cloudUser) {
-            serverUser = cloudUser;
-          } else if (fbUser.email) {
-            const cloudEmailUser = await findUserInCloud(fbUser.email);
-            if (cloudEmailUser) serverUser = cloudEmailUser;
-          }
-        } catch {}
-
         if (!serverUser.id) {
           try {
             const res = await fetch(`/api/users/${encodeURIComponent(fbUser.uid)}`);
@@ -752,8 +672,6 @@ export default function App() {
         }
         localStorage.setItem('socialcart_registered_users', JSON.stringify(registeredUsers));
 
-        // Persist to server and Firebase Cloud Firestore
-        saveUserToCloud(mergedUser).catch(() => {});
         fetch('/api/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -843,7 +761,6 @@ export default function App() {
     }
     localStorage.setItem('socialcart_registered_users', JSON.stringify(registeredUsers));
 
-    saveUserToCloud(mergedUser).catch(() => {});
     fetch('/api/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1007,9 +924,6 @@ export default function App() {
         return c;
       });
     });
-    if (targetConvToSync) {
-      saveConversationToCloud(targetConvToSync).catch(() => {});
-    }
   }, [currentUser.username]);
 
   const handleMarkAllConversationsRead = useCallback((type?: 'social' | 'market') => {
@@ -1061,7 +975,6 @@ export default function App() {
     }));
 
     if (targetPost) {
-      savePostToCloud(targetPost).catch(err => console.warn('Cloud like sync notice:', err));
       try {
         await fetch('/api/posts', {
           method: 'POST',
@@ -1098,7 +1011,6 @@ export default function App() {
     }));
 
     if (targetPost) {
-      savePostToCloud(targetPost).catch(err => console.warn('Cloud comment sync notice:', err));
       try {
         await fetch('/api/posts', {
           method: 'POST',
@@ -1154,7 +1066,6 @@ export default function App() {
     }
 
     if (targetPost) {
-      savePostToCloud(targetPost).catch(err => console.warn('Cloud comment deletion sync notice:', err));
       try {
         await fetch('/api/posts', {
           method: 'POST',
@@ -1193,9 +1104,6 @@ export default function App() {
     setActiveSection('social');
     setActiveTab('feed');
 
-    // Cloud Firestore persistence
-    savePostToCloud(newPost).catch(err => console.error('Failed to persist post to cloud:', err));
-
     // Server-side persistence
     try {
       const res = await fetch('/api/posts', {
@@ -1223,7 +1131,6 @@ export default function App() {
 
   const handleDeletePost = async (postId: string) => {
     setPosts(prev => prev.filter(p => p.id !== postId));
-    deletePostFromCloud(postId).catch(err => console.error('Failed to delete post from cloud:', err));
     try {
       await fetch(`/api/posts/${postId}`, { method: 'DELETE' });
     } catch (err) {
@@ -1343,9 +1250,6 @@ export default function App() {
     setActiveSection('market');
     setActiveTab('marketplace');
 
-    // Cloud Firestore persistence
-    saveProductToCloud(newProduct).catch(err => console.error('Failed to persist product to cloud:', err));
-
     // Server-side persistence
     try {
       const res = await fetch('/api/products', {
@@ -1373,7 +1277,6 @@ export default function App() {
 
   const handleDeleteProduct = async (productId: string) => {
     setProducts(prev => prev.filter(p => p.id !== productId));
-    deleteProductFromCloud(productId).catch(err => console.error('Failed to delete product from cloud:', err));
     try {
       await fetch(`/api/products/${productId}`, { method: 'DELETE' });
     } catch (err) {
@@ -1427,11 +1330,6 @@ export default function App() {
     // Prepend to orders
     setOrders(prev => [...newOrders, ...prev]);
 
-    // Save orders to Cloud Firestore
-    for (const ord of newOrders) {
-      saveOrderToCloud(ord).catch(err => console.error('Cloud order save error:', err));
-    }
-
     // Persist to server
     fetch('/api/orders', {
       method: 'POST',
@@ -1466,9 +1364,8 @@ export default function App() {
       return next;
     });
 
-    // Sync updated product sales to Cloud Firestore and backend
+    // Sync updated product sales to backend
     for (const prod of updatedProductsToSync) {
-      saveProductToCloud(prod).catch(err => console.error('Cloud product sales sync error:', err));
       fetch('/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1547,8 +1444,6 @@ export default function App() {
     const targetOrder = orders.find(o => o.id === orderId);
     if (!targetOrder) return;
 
-    saveOrderToCloud({ ...targetOrder, hasRatedSeller: true }).catch(() => {});
-
     const newReview: SellerReview = {
       id: `rev_${Date.now()}`,
       buyerUsername: currentUser.username,
@@ -1596,13 +1491,11 @@ export default function App() {
           sellerReviewsCount: nextReviewsCount
         };
         localStorage.setItem('socialcart_user', JSON.stringify(updated));
-        saveUserToCloud(updated).catch(() => {});
         return updated;
       });
     }
 
     for (const prod of updatedProductsToSync) {
-      saveProductToCloud(prod).catch(err => console.error('Failed to sync updated product to cloud:', err));
       try {
         await fetch('/api/products', {
           method: 'POST',
@@ -1642,11 +1535,6 @@ export default function App() {
       return next;
     });
 
-    // Sync to cloud
-    for (const prod of updatedProductsToSync) {
-      saveProductToCloud(prod).catch(err => console.error('Failed to sync product after review deletion:', err));
-    }
-
     // Server-side deletion endpoint
     try {
       await fetch(`/api/products/${productId}/reviews/${reviewId}`, {
@@ -1681,7 +1569,6 @@ export default function App() {
       setOrders(prev => prev.map(o => {
         if (o.id === data.targetId) {
           const updated = { ...o, status: 'refunded' as const };
-          saveOrderToCloud(updated).catch(() => {});
           return updated;
         }
         return o;
@@ -1745,10 +1632,6 @@ export default function App() {
       localStorage.setItem(userKey, JSON.stringify(next));
       return next;
     });
-
-    if (updatedConv) {
-      saveConversationToCloud(updatedConv).catch(err => console.error('Cloud msg save error:', err));
-    }
   };
 
   const handleDeleteConversation = (conversationId: string) => {
@@ -1763,10 +1646,7 @@ export default function App() {
       return filtered;
     });
 
-    // 3. Delete from Firebase Cloud
-    deleteConversationFromCloud(conversationId).catch(err => console.error('Cloud conv delete error:', err));
-
-    // 4. Remove from shared pool to prevent re-injection on reload
+    // 3. Remove from shared pool to prevent re-injection on reload
     try {
       const existingPoolRaw = localStorage.getItem('socialcart_shared_conversations_pool');
       if (existingPoolRaw) {
@@ -1778,7 +1658,7 @@ export default function App() {
       }
     } catch {}
 
-    // 5. Reset selected conversation pointers
+    // 4. Reset selected conversation pointers
     if (selectedMarketConvId === conversationId) {
       setSelectedMarketConvId(null);
     }
@@ -1786,12 +1666,11 @@ export default function App() {
       setSelectedSocialConvId(null);
     }
 
-    // 6. Also remove notifications related to this deleted conversation
+    // 5. Also remove notifications related to this deleted conversation
     setNotifications(prev => prev.filter(n => n.targetConvId !== conversationId));
   };
 
   const handleToggleConversationUnread = (conversationId: string) => {
-    let updatedConv: Conversation | null = null;
     setConversations(prev => {
       const next = prev.map(c => {
         if (c.id === conversationId) {
@@ -1807,7 +1686,6 @@ export default function App() {
             unreadCount: newUnread,
             unreadCountBy: nextUnreadBy
           };
-          updatedConv = up;
           return up;
         }
         return c;
@@ -1816,10 +1694,6 @@ export default function App() {
       localStorage.setItem(key, JSON.stringify(next));
       return next;
     });
-
-    if (updatedConv) {
-      saveConversationToCloud(updatedConv).catch(() => {});
-    }
   };
 
   const handleStartNewConversation = (
@@ -1846,7 +1720,6 @@ export default function App() {
       if (productTitle && existing.relatedProductTitle !== productTitle) {
         const updated = { ...existing, relatedProductTitle: productTitle, type };
         setConversations(prev => prev.map(c => c.id === existing.id ? updated : c));
-        saveConversationToCloud(updated).catch(() => {});
       }
       if (type === 'market') {
         setSelectedMarketConvId(existing.id);
@@ -1895,7 +1768,6 @@ export default function App() {
     };
 
     setConversations(prev => [newConv, ...prev]);
-    saveConversationToCloud(newConv).catch(err => console.error('Cloud new conv save error:', err));
     if (type === 'market') {
       setSelectedMarketConvId(newConvId);
     } else {
@@ -2008,8 +1880,7 @@ export default function App() {
     }
     localStorage.setItem('socialcart_registered_users', JSON.stringify(registeredUsers));
 
-    // 3. Persist to Firebase Cloud Firestore and server REST API
-    saveUserToCloud(nextUser).catch(err => console.warn('Cloud user sync error:', err));
+    // 3. Persist to server REST API
     fetch('/api/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2060,7 +1931,6 @@ export default function App() {
         });
         nextPosts.forEach(p => {
           if (p.author.id === currentUser.id || p.author.username === newUsername) {
-            savePostToCloud(p).catch(() => {});
             fetch('/api/posts', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -2088,7 +1958,6 @@ export default function App() {
         });
         nextProds.forEach(p => {
           if (p.seller?.username === newUsername) {
-            saveProductToCloud(p).catch(() => {});
             fetch('/api/products', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },

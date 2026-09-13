@@ -24,7 +24,6 @@ import {
   updateProfile,
   signOut
 } from 'firebase/auth';
-import { saveUserToCloud, findUserInCloud, checkCloudUnique } from '../lib/firestoreService';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -145,8 +144,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
       localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
 
-      // Persist to server and Firebase Cloud Firestore
-      saveUserToCloud(appUser).catch(() => {});
+      // Persist to server
       fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -169,21 +167,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         u => (u.email?.toLowerCase() === identifier.toLowerCase() || u.username?.toLowerCase() === identifier.toLowerCase()) && u.password === loginPassword
       );
 
-      // If not found in local cache, check Firebase Cloud Firestore Database first
-      if (!localMatched) {
-        try {
-          const cloudUser = await findUserInCloud(identifier);
-          if (cloudUser && (!cloudUser.password || cloudUser.password === loginPassword)) {
-            localMatched = cloudUser;
-            savedUsers.push(cloudUser);
-            localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
-          }
-        } catch (cloudErr) {
-          console.warn('Cloud user check notice:', cloudErr);
-        }
-      }
-
-      // If not found in cloud, check server database fallback
+      // If not found in local cache, check server database fallback
       if (!localMatched) {
         try {
           const srvUserRes = await fetch(`/api/users/${encodeURIComponent(identifier)}`);
@@ -191,8 +175,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             const srvUser = await srvUserRes.json();
             if (srvUser && srvUser.password === loginPassword) {
               localMatched = srvUser;
-              // Cache locally and sync to cloud
-              saveUserToCloud(srvUser).catch(() => {});
               savedUsers.push(srvUser);
               localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
             }
@@ -278,7 +260,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
       localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
 
-      saveUserToCloud(appUser).catch(() => {});
       fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -387,23 +368,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     setIsSubmitting(true);
 
-    // 2. STRICT CLOUD & SERVER UNIQUENESS CHECK
-    try {
-      const cloudCheck = await checkCloudUnique(cleanUsername, cleanEmail);
-      if (cloudCheck.emailTaken) {
-        setErrorMsg(`⚠️ البريد الإلكتروني (${cleanEmail}) مسجل مسبقاً بحساب آخر في السحابة. لا يمكن تكرار البريد.`);
-        setIsSubmitting(false);
-        return;
-      }
-      if (cloudCheck.usernameTaken) {
-        setErrorMsg(`⚠️ اسم المستخدم (@${cleanUsername}) محجوز بالفعل لمستخدم آخر في السحابة. يرجى اختيار اسم مستخدم متاح.`);
-        setIsSubmitting(false);
-        return;
-      }
-    } catch (chkErr) {
-      console.warn('Cloud uniqueness check notice:', chkErr);
-    }
-
     try {
       const checkRes = await fetch(`/api/auth/check-unique?username=${encodeURIComponent(cleanUsername)}&email=${encodeURIComponent(cleanEmail)}`);
       if (checkRes.ok) {
@@ -465,9 +429,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       savedUsers.push(newUser);
       localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
 
-      // Save user to cloud
-      saveUserToCloud(newUser).catch(err => console.warn('Cloud user save notice:', err));
-
       fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -518,9 +479,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         // Ensure local state is immediately assigned to this brand-new user
         localStorage.setItem('socialcart_user', JSON.stringify(newUser));
         localStorage.setItem('socialcart_logged_in', 'true');
-
-        // Save to Firebase Cloud
-        saveUserToCloud(newUser).catch(err => console.warn('Cloud user save notice:', err));
 
         // Try backend registration with isRegistration flag
         try {
