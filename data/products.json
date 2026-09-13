@@ -1,1 +1,86 @@
-[]
+[
+  {
+    "id": "prod_seed_1",
+    "sellerId": "usr_seed_omar",
+    "seller": {
+      "username": "omar_design",
+      "displayName": "عمر المصمم",
+      "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      "isVerified": true,
+      "rating": 4.9,
+      "reviewsCount": 12,
+      "trustScore": 99,
+      "totalSales": 48
+    },
+    "title": "قالب داشبورد ولوحة تحكم احترافية Figma & React",
+    "description": "قالب متكامل مع أكثر من 50 شاشة مصممة بدقة باللغتين العربية والإنجليزية، متوافق مع كافة الأجهزة ومزود بكود React نظيف وجاهز للإنتاج فوراً.",
+    "category": "قوالب وتصاميم",
+    "price": 35,
+    "originalPrice": 50,
+    "media": [
+      {
+        "id": "pm1",
+        "type": "image",
+        "url": "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&auto=format&fit=crop&q=80",
+        "caption": "معاينة لوحة التحكم"
+      }
+    ],
+    "fileUrl": "https://example.com/files/dashboard-kit.zip",
+    "downloadSize": "45 MB",
+    "fileType": "ZIP (Figma + React Code)",
+    "salesCount": 48,
+    "likesCount": 36,
+    "likedByMe": false,
+    "likedUserIds": [],
+    "createdAt": "2026-09-10T12:00:00.000Z",
+    "escrowProtected": true,
+    "reviews": [
+      {
+        "id": "rev1",
+        "buyerUsername": "tariq_sa",
+        "buyerAvatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
+        "rating": 5,
+        "comment": "قالب ممتاز ونظيف جداً وساعدني في تسليم مشروع عميلي بسرعة فائقة!",
+        "date": "2026-09-11",
+        "productTitle": "قالب داشبورد ولوحة تحكم احترافية Figma & React"
+      }
+    ]
+  },
+  {
+    "id": "prod_seed_2",
+    "sellerId": "usr_seed_khalid",
+    "seller": {
+      "username": "khalid_dev",
+      "displayName": "خالد البرمجي",
+      "avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+      "isVerified": true,
+      "rating": 5.0,
+      "reviewsCount": 8,
+      "trustScore": 100,
+      "totalSales": 29
+    },
+    "title": "مكتبة مكونات React & Tailwind لدعم اللغة العربية (RTL)",
+    "description": "أكثر من 80 مكون واجهة مستخدم متوافق كلياً مع الاتجاه من اليمين لليسار (RTL)، مع دعم كامل للوضع الليلي ووصولية ذوي الاحتياجات الخاصة وسرعة تحميل فائقة.",
+    "category": "برمجيات وأكواد",
+    "price": 25,
+    "originalPrice": 40,
+    "media": [
+      {
+        "id": "pm2",
+        "type": "image",
+        "url": "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=1200&auto=format&fit=crop&q=80",
+        "caption": "كود ومكونات RTL"
+      }
+    ],
+    "fileUrl": "https://example.com/files/rtl-ui-kit.zip",
+    "downloadSize": "12 MB",
+    "fileType": "NPM / TypeScript Kit",
+    "salesCount": 29,
+    "likesCount": 52,
+    "likedByMe": false,
+    "likedUserIds": [],
+    "createdAt": "2026-09-09T14:30:00.000Z",
+    "escrowProtected": true,
+    "reviews": []
+  }
+]

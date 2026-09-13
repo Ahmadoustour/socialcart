@@ -96,6 +96,7 @@ const POSTS_FILE = path.join(DATA_DIR, "posts.json");
 const PRODUCTS_FILE = path.join(DATA_DIR, "products.json");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
 const ORDERS_FILE = path.join(DATA_DIR, "orders.json");
+const CONVERSATIONS_FILE = path.join(DATA_DIR, "conversations.json");
 
 function readJsonFile<T>(filePath: string, defaultValue: T): T {
   try {
@@ -1202,6 +1203,122 @@ app.post(["/api/orders", "/orders"], (req, res) => {
     res.json({ success: true, count: orders.length });
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Failed to persist orders" });
+  }
+});
+
+// 10. Conversations & Messages Persistence APIs
+app.get(["/api/conversations", "/conversations"], (req, res) => {
+  try {
+    const { userId, username } = req.query;
+    const convs = readJsonFile<any[]>(CONVERSATIONS_FILE, []);
+    if (userId || username) {
+      const cleanUser = typeof username === "string" ? username.trim().toLowerCase().replace(/^@/, "") : "";
+      const cleanId = typeof userId === "string" ? userId.trim() : "";
+      const filtered = convs.filter(c => {
+        if (!c || !c.id) return false;
+        const participants = Array.isArray(c.participants) ? c.participants.map((p: string) => (p || "").toLowerCase()) : [];
+        const isPart = cleanUser && (
+          participants.includes(cleanUser) ||
+          (c.participantUsername && c.participantUsername.toLowerCase() === cleanUser) ||
+          (c.creatorUsername && c.creatorUsername.toLowerCase() === cleanUser)
+        );
+        const isId = cleanId && (
+          c.userId === cleanId || 
+          c.creatorId === cleanId || 
+          c.participantId === cleanId ||
+          c.participantId === `usr_${cleanUser}`
+        );
+        return Boolean(isPart || isId);
+      });
+      return res.json(filtered);
+    }
+    res.json(convs);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to read conversations" });
+  }
+});
+
+app.post(["/api/conversations", "/conversations"], (req, res) => {
+  try {
+    const conv = req.body;
+    if (!conv || !conv.id) {
+      return res.status(400).json({ error: "Invalid conversation data" });
+    }
+    const convs = readJsonFile<any[]>(CONVERSATIONS_FILE, []);
+    const existingIndex = convs.findIndex(c => c.id === conv.id);
+    if (existingIndex >= 0) {
+      convs[existingIndex] = { ...convs[existingIndex], ...conv };
+    } else {
+      convs.unshift(conv);
+    }
+    writeJsonFile(CONVERSATIONS_FILE, convs);
+    res.json(convs[existingIndex >= 0 ? existingIndex : 0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to persist conversation" });
+  }
+});
+
+app.post(["/api/conversations/:id/messages", "/conversations/:id/messages"], (req, res) => {
+  try {
+    const { id } = req.params;
+    const { message, unreadCountBy } = req.body;
+    if (!message || !message.id) {
+      return res.status(400).json({ error: "Invalid message data" });
+    }
+    const convs = readJsonFile<any[]>(CONVERSATIONS_FILE, []);
+    const existingIndex = convs.findIndex(c => c.id === id);
+    if (existingIndex >= 0) {
+      const conv = convs[existingIndex];
+      conv.messages = Array.isArray(conv.messages) ? conv.messages : [];
+      if (!conv.messages.some((m: any) => m.id === message.id)) {
+        conv.messages.push(message);
+      }
+      conv.lastMessage = message.text || (message.media?.length ? "مرفق وسائط" : "");
+      conv.lastMessageTime = message.createdAt || new Date().toISOString();
+      if (unreadCountBy) {
+        conv.unreadCountBy = { ...(conv.unreadCountBy || {}), ...unreadCountBy };
+      }
+      convs[existingIndex] = conv;
+      writeJsonFile(CONVERSATIONS_FILE, convs);
+      return res.json(conv);
+    }
+    res.status(404).json({ error: "Conversation not found" });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to add message" });
+  }
+});
+
+app.put(["/api/conversations/:id/read", "/conversations/:id/read"], (req, res) => {
+  try {
+    const { id } = req.params;
+    const { username } = req.body;
+    const convs = readJsonFile<any[]>(CONVERSATIONS_FILE, []);
+    const existingIndex = convs.findIndex(c => c.id === id);
+    if (existingIndex >= 0) {
+      const conv = convs[existingIndex];
+      if (username && conv.unreadCountBy) {
+        conv.unreadCountBy[username.toLowerCase()] = 0;
+      }
+      conv.unreadCount = 0;
+      convs[existingIndex] = conv;
+      writeJsonFile(CONVERSATIONS_FILE, convs);
+      return res.json(conv);
+    }
+    res.status(404).json({ error: "Conversation not found" });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to mark conversation read" });
+  }
+});
+
+app.delete(["/api/conversations/:id", "/conversations/:id"], (req, res) => {
+  try {
+    const { id } = req.params;
+    let convs = readJsonFile<any[]>(CONVERSATIONS_FILE, []);
+    convs = convs.filter(c => c.id !== id);
+    writeJsonFile(CONVERSATIONS_FILE, convs);
+    res.json({ success: true, id });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to delete conversation" });
   }
 });
 

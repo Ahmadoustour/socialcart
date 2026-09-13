@@ -19,6 +19,26 @@ import { AccountMenuModal } from './components/AccountMenuModal';
 
 import { auth } from './lib/firebase';
 import { onAuthStateChanged, signOut, updatePassword, updateProfile, updateEmail } from 'firebase/auth';
+import {
+  fetchRemotePosts,
+  saveRemotePost,
+  deleteRemotePost,
+  subscribeToRemotePosts,
+  fetchRemoteProducts,
+  saveRemoteProduct,
+  deleteRemoteProduct,
+  subscribeToRemoteProducts,
+  fetchRemoteConversations,
+  saveRemoteConversation,
+  sendRemoteMessage,
+  markRemoteConversationRead,
+  deleteRemoteConversation,
+  subscribeToRemoteConversations,
+  fetchRemoteOrders,
+  saveRemoteOrder,
+  fetchRemoteUser,
+  saveRemoteUser
+} from './services/dataService';
 import { 
   User, 
   SavedCard,
@@ -574,74 +594,141 @@ export default function App() {
     localStorage.setItem(key, JSON.stringify(notifications));
   }, [notifications, currentUser.id]);
 
-  // Load persistent posts and products from server API
+  // 1. Real-time Subscription and Remote Synchronization for Posts
   useEffect(() => {
-    fetch('/api/posts')
-      .then(res => {
-        if (!res.ok) throw new Error('Failed to fetch posts');
-        return res.json();
-      })
-      .then((serverData: any) => {
-        const serverPosts: Post[] = Array.isArray(serverData) ? serverData : (serverData?.posts || []);
-        if (Array.isArray(serverPosts) && serverPosts.length > 0) {
-          setPosts(prev => {
-            const map = new Map<string, Post>();
-            serverPosts.forEach(p => { if (p && p.id) map.set(p.id, p); });
-            prev.forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
-            return Array.from(map.values());
-          });
-        }
-      })
-      .catch(err => console.log('Notice: using local posts cache:', err));
+    fetchRemotePosts().then(remotePosts => {
+      if (Array.isArray(remotePosts) && remotePosts.length > 0) {
+        setPosts(prev => {
+          const map = new Map<string, Post>();
+          remotePosts.forEach(p => { if (p && p.id) map.set(p.id, p); });
+          prev.forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
+          return Array.from(map.values());
+        });
+      }
+    });
 
-    fetch('/api/products')
-      .then(res => {
-        if (!res.ok) throw new Error('Failed to fetch products');
-        return res.json();
-      })
-      .then((serverData: any) => {
-        const serverProducts: Product[] = Array.isArray(serverData) ? serverData : (serverData?.products || []);
-        if (Array.isArray(serverProducts) && serverProducts.length > 0) {
-          setProducts(prev => {
-            const map = new Map<string, Product>();
-            serverProducts.forEach(p => { if (p && p.id) map.set(p.id, p); });
-            prev.forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
-            return Array.from(map.values());
-          });
-        }
-      })
-      .catch(err => console.log('Notice: using local products cache:', err));
+    const unsubPosts = subscribeToRemotePosts(updatedPosts => {
+      if (Array.isArray(updatedPosts) && updatedPosts.length > 0) {
+        setPosts(prev => {
+          const map = new Map<string, Post>();
+          updatedPosts.forEach(p => { if (p && p.id) map.set(p.id, p); });
+          prev.forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    return () => unsubPosts();
   }, []);
 
-  // Load persistent orders for current user from server API
+  // 2. Real-time Subscription and Remote Synchronization for Products
+  useEffect(() => {
+    fetchRemoteProducts().then(remoteProducts => {
+      if (Array.isArray(remoteProducts) && remoteProducts.length > 0) {
+        setProducts(prev => {
+          const map = new Map<string, Product>();
+          remoteProducts.forEach(p => { if (p && p.id) map.set(p.id, p); });
+          prev.forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubProducts = subscribeToRemoteProducts(updatedProducts => {
+      if (Array.isArray(updatedProducts) && updatedProducts.length > 0) {
+        setProducts(prev => {
+          const map = new Map<string, Product>();
+          updatedProducts.forEach(p => { if (p && p.id) map.set(p.id, p); });
+          prev.forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    return () => unsubProducts();
+  }, []);
+
+  // 3. Real-time Subscription and Cross-Browser Sync for Conversations & Inquiries
+  useEffect(() => {
+    if (!currentUser.id || currentUser.id === 'guest') return;
+
+    fetchRemoteConversations(currentUser.id, currentUser.username).then(remoteConvs => {
+      if (Array.isArray(remoteConvs) && remoteConvs.length > 0) {
+        setConversations(prev => {
+          const map = new Map<string, Conversation>();
+          prev.forEach(c => { if (c && c.id) map.set(c.id, c); });
+          remoteConvs.forEach(c => {
+            if (!c || !c.id) return;
+            const existing = map.get(c.id);
+            if (existing) {
+              const msgMap = new Map<string, Message>();
+              (existing.messages || []).forEach(m => { if (m && m.id) msgMap.set(m.id, m); });
+              (c.messages || []).forEach(m => { if (m && m.id) msgMap.set(m.id, m); });
+              const mergedMessages = Array.from(msgMap.values()).sort((a, b) =>
+                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+              );
+              map.set(c.id, { ...existing, ...c, messages: mergedMessages });
+            } else {
+              map.set(c.id, c);
+            }
+          });
+          const result = Array.from(map.values());
+          const userKey = getUserStorageKey('socialcart_conversations', currentUser.id);
+          localStorage.setItem(userKey, JSON.stringify(result));
+          return result;
+        });
+      }
+    });
+
+    const unsubConvs = subscribeToRemoteConversations(currentUser.id, currentUser.username, updatedConvs => {
+      if (Array.isArray(updatedConvs)) {
+        setConversations(prev => {
+          const map = new Map<string, Conversation>();
+          prev.forEach(c => { if (c && c.id) map.set(c.id, c); });
+          updatedConvs.forEach(c => {
+            if (!c || !c.id) return;
+            const existing = map.get(c.id);
+            if (existing) {
+              const msgMap = new Map<string, Message>();
+              (existing.messages || []).forEach(m => { if (m && m.id) msgMap.set(m.id, m); });
+              (c.messages || []).forEach(m => { if (m && m.id) msgMap.set(m.id, m); });
+              const mergedMessages = Array.from(msgMap.values()).sort((a, b) =>
+                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+              );
+              map.set(c.id, { ...existing, ...c, messages: mergedMessages });
+            } else {
+              map.set(c.id, c);
+            }
+          });
+          const result = Array.from(map.values());
+          const userKey = getUserStorageKey('socialcart_conversations', currentUser.id);
+          localStorage.setItem(userKey, JSON.stringify(result));
+          return result;
+        });
+      }
+    });
+
+    return () => unsubConvs();
+  }, [currentUser.id, currentUser.username]);
+
+  // 4. Remote Persistence for User Orders
   useEffect(() => {
     if (currentUser.id && currentUser.id !== 'guest') {
-      fetch(`/api/orders?userId=${encodeURIComponent(currentUser.id)}`)
-        .then(res => res.ok ? res.json() : [])
-        .then((serverOrders: Order[]) => {
-          if (Array.isArray(serverOrders) && serverOrders.length > 0) {
-            setOrders(prev => {
-              const map = new Map<string, Order>();
-              serverOrders.forEach(o => { 
-                if (o && o.id && (o.buyerId === currentUser.id || (currentUser.email && o.buyerEmail?.toLowerCase() === currentUser.email.toLowerCase()))) {
-                  map.set(o.id, o);
-                }
-              });
-              prev.forEach(o => { 
-                if (o && o.id && (o.buyerId === currentUser.id || (currentUser.email && o.buyerEmail?.toLowerCase() === currentUser.email.toLowerCase())) && !map.has(o.id)) {
-                  map.set(o.id, o);
-                }
-              });
-              const combined = Array.from(map.values());
-              const key = getUserStorageKey('socialcart_orders', currentUser.id);
-              localStorage.setItem(key, JSON.stringify(combined));
-              return combined;
-            });
-          }
-        })
-        .catch(() => {});
+      fetchRemoteOrders(currentUser.id, currentUser.email).then(remoteOrders => {
+        if (Array.isArray(remoteOrders) && remoteOrders.length > 0) {
+          setOrders(prev => {
+            const map = new Map<string, Order>();
+            remoteOrders.forEach(o => { if (o && o.id) map.set(o.id, o); });
+            prev.forEach(o => { if (o && o.id && !map.has(o.id)) map.set(o.id, o); });
+            const combined = Array.from(map.values());
+            const key = getUserStorageKey('socialcart_orders', currentUser.id);
+            localStorage.setItem(key, JSON.stringify(combined));
+            return combined;
+          });
+        }
+      });
     }
-  }, [currentUser.id]);
+  }, [currentUser.id, currentUser.email]);
 
   // Sync Firebase Auth state & merge with local/server profiles to preserve password, card, bio, etc.
   useEffect(() => {
@@ -739,12 +826,8 @@ export default function App() {
         }
         localStorage.setItem('socialcart_registered_users', JSON.stringify(registeredUsers));
 
-        // Persist to server
-        fetch('/api/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(mergedUser)
-        }).catch(() => {});
+        // Persist to server and Firebase Firestore
+        saveRemoteUser(mergedUser);
       }
     });
     return () => unsubscribe();
@@ -828,12 +911,7 @@ export default function App() {
       registeredUsers.push(mergedUser);
     }
     localStorage.setItem('socialcart_registered_users', JSON.stringify(registeredUsers));
-
-    fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(mergedUser)
-    }).catch(() => {});
+    saveRemoteUser(mergedUser);
   };
 
   const handleLogout = async () => {
@@ -974,6 +1052,7 @@ export default function App() {
 
   // Handlers for marking conversations as read
   const handleMarkConversationRead = useCallback((convId: string) => {
+    markRemoteConversationRead(convId, currentUser.username);
     setConversations(prev => {
       const target = prev.find(c => c.id === convId);
       if (!target || target.unreadCount === 0) return prev;
@@ -1040,15 +1119,7 @@ export default function App() {
     }));
 
     if (targetPost) {
-      try {
-        await fetch('/api/posts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(targetPost)
-        });
-      } catch (err) {
-        console.error('Failed to persist like to server:', err);
-      }
+      saveRemotePost(targetPost);
     }
   };
 
@@ -1076,15 +1147,7 @@ export default function App() {
     }));
 
     if (targetPost) {
-      try {
-        await fetch('/api/posts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(targetPost)
-        });
-      } catch (err) {
-        console.error('Failed to persist comment to server:', err);
-      }
+      saveRemotePost(targetPost);
     }
   };
 
@@ -1131,15 +1194,7 @@ export default function App() {
     }
 
     if (targetPost) {
-      try {
-        await fetch('/api/posts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(targetPost)
-        });
-      } catch (err) {
-        console.error('Failed to sync post after comment deletion:', err);
-      }
+      saveRemotePost(targetPost);
     }
   };
 
@@ -1169,38 +1224,13 @@ export default function App() {
     setActiveSection('social');
     setActiveTab('feed');
 
-    // Server-side persistence
-    try {
-      const res = await fetch('/api/posts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newPost)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const savedPost: Post = (data && data.post) ? data.post : data;
-        if (savedPost && savedPost.id) {
-          setPosts(prev => {
-            const exists = prev.some(p => p.id === savedPost.id);
-            if (exists) {
-              return prev.map(p => p.id === savedPost.id ? savedPost : p);
-            }
-            return [savedPost, ...prev.filter(p => p.id !== newPost.id)];
-          });
-        }
-      }
-    } catch (err) {
-      console.error('Failed to persist post to server:', err);
-    }
+    // Remote persistence to Firebase and Express server
+    saveRemotePost(newPost);
   };
 
   const handleDeletePost = async (postId: string) => {
     setPosts(prev => prev.filter(p => p.id !== postId));
-    try {
-      await fetch(`/api/posts/${postId}`, { method: 'DELETE' });
-    } catch (err) {
-      console.error('Failed to delete post on server:', err);
-    }
+    deleteRemotePost(postId);
   };
 
   // 2. Marketplace Handlers
@@ -1315,38 +1345,13 @@ export default function App() {
     setActiveSection('market');
     setActiveTab('marketplace');
 
-    // Server-side persistence
-    try {
-      const res = await fetch('/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newProduct)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const savedProduct: Product = (data && data.product) ? data.product : data;
-        if (savedProduct && savedProduct.id) {
-          setProducts(prev => {
-            const exists = prev.some(p => p.id === savedProduct.id);
-            if (exists) {
-              return prev.map(p => p.id === savedProduct.id ? savedProduct : p);
-            }
-            return [savedProduct, ...prev.filter(p => p.id !== newProduct.id)];
-          });
-        }
-      }
-    } catch (err) {
-      console.error('Failed to persist product to server:', err);
-    }
+    // Remote persistence to Firebase and Express server
+    saveRemoteProduct(newProduct);
   };
 
   const handleDeleteProduct = async (productId: string) => {
     setProducts(prev => prev.filter(p => p.id !== productId));
-    try {
-      await fetch(`/api/products/${productId}`, { method: 'DELETE' });
-    } catch (err) {
-      console.error('Failed to delete product on server:', err);
-    }
+    deleteRemoteProduct(productId);
   };
 
   // Cart quantity update
@@ -1395,12 +1400,10 @@ export default function App() {
     // Prepend to orders
     setOrders(prev => [...newOrders, ...prev]);
 
-    // Persist to server
-    fetch('/api/orders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newOrders)
-    }).catch(err => console.log('Notice: using local storage fallback for orders:', err));
+    // Persist each new order to Firebase & server
+    newOrders.forEach(o => {
+      saveRemoteOrder(o);
+    });
 
     // ACCURATE SALES COUNT & REVENUE UPDATE FOR PURCHASED PRODUCTS
     const boughtQtyMap = new Map<string, number>();
@@ -1429,13 +1432,9 @@ export default function App() {
       return next;
     });
 
-    // Sync updated product sales to backend
+    // Sync updated product sales to Firebase & backend
     for (const prod of updatedProductsToSync) {
-      fetch('/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(prod)
-      }).catch(err => console.log('Products sync error:', err));
+      saveRemoteProduct(prod);
     }
 
     // ACCURATE REVENUE & SELLER SALES UPDATE IF CURRENT USER IS THE SELLER
@@ -1561,15 +1560,7 @@ export default function App() {
     }
 
     for (const prod of updatedProductsToSync) {
-      try {
-        await fetch('/api/products', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(prod)
-        });
-      } catch (err) {
-        console.error('Failed to sync updated product review to server:', err);
-      }
+      saveRemoteProduct(prod);
     }
   };
 
@@ -1610,15 +1601,7 @@ export default function App() {
     }
 
     for (const prod of updatedProductsToSync) {
-      try {
-        await fetch('/api/products', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(prod)
-        });
-      } catch (err) {
-        console.error('Failed to sync updated product review deletion to server:', err);
-      }
+      saveRemoteProduct(prod);
     }
   };
 
@@ -1663,16 +1646,20 @@ export default function App() {
     const targetConv = conversations.find(c => c.id === conversationId);
     const otherUser = targetConv?.participantUsername?.toLowerCase() || '';
 
+    const nextUnreadBy = { ...(targetConv?.unreadCountBy || {}) };
+    if (currentUser.username) {
+      nextUnreadBy[currentUser.username.toLowerCase()] = 0;
+    }
+    if (otherUser) {
+      nextUnreadBy[otherUser] = (nextUnreadBy[otherUser] || 0) + 1;
+    }
+
+    // Persist remote message to Firebase & Server API
+    sendRemoteMessage(conversationId, newMsg, nextUnreadBy);
+
     setConversations(prev => {
       const next = prev.map(c => {
         if (c.id === conversationId) {
-          const nextUnreadBy = { ...(c.unreadCountBy || {}) };
-          if (currentUser.username) {
-            nextUnreadBy[currentUser.username.toLowerCase()] = 0;
-          }
-          if (otherUser) {
-            nextUnreadBy[otherUser] = (nextUnreadBy[otherUser] || 0) + 1;
-          }
           return {
             ...c,
             lastMessage: text || (media?.length ? 'ملف وسائط مرفق' : ''),
@@ -1693,6 +1680,9 @@ export default function App() {
   const handleDeleteConversation = (conversationId: string) => {
     // 1. Mark as permanently deleted for this user
     addDeletedConvId(currentUser.id, conversationId);
+
+    // Delete remotely from Firebase and server
+    deleteRemoteConversation(conversationId);
 
     // 2. Remove from active state and persist to user storage
     setConversations(prev => {
@@ -1822,6 +1812,7 @@ export default function App() {
     };
 
     setConversations(prev => [newConv, ...prev]);
+    saveRemoteConversation(newConv);
     if (type === 'market') {
       setSelectedMarketConvId(newConvId);
     } else {
@@ -1934,12 +1925,8 @@ export default function App() {
     }
     localStorage.setItem('socialcart_registered_users', JSON.stringify(registeredUsers));
 
-    // 3. Persist to server REST API in data/users.json
-    fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(nextUser)
-    }).catch(err => console.warn('Server user persistence note:', err));
+    // 3. Persist to server REST API and Firebase Firestore
+    saveRemoteUser(nextUser);
 
     // 4. If logged into Firebase Auth, synchronize credentials safely
     if (auth.currentUser) {
@@ -1985,11 +1972,7 @@ export default function App() {
         });
         nextPosts.forEach(p => {
           if (p.author.id === currentUser.id || p.author.username === newUsername) {
-            fetch('/api/posts', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(p)
-            }).catch(() => {});
+            saveRemotePost(p);
           }
         });
         return nextPosts;
@@ -2012,11 +1995,7 @@ export default function App() {
         });
         nextProds.forEach(p => {
           if (p.seller?.username === newUsername) {
-            fetch('/api/products', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(p)
-            }).catch(() => {});
+            saveRemoteProduct(p);
           }
         });
         return nextProds;

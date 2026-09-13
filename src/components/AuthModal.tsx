@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { User } from '../types';
 import { auth, googleProvider } from '../lib/firebase';
+import { saveRemoteUser } from '../services/dataService';
 import { 
   signInWithPopup, 
   signInWithEmailAndPassword, 
@@ -144,12 +145,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
       localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
 
-      // Persist to server
-      fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(appUser)
-      }).catch(() => {});
+      // Persist to Firebase and server
+      saveRemoteUser(appUser);
 
       setSuccessMsg(`أهلاً بك مجدداً يا ${appUser.displayName}! تم تسجيل الدخول بنجاح 🛡️`);
       setTimeout(() => {
@@ -261,11 +258,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
       localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
 
-      fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(appUser)
-      }).catch(() => {});
+      saveRemoteUser(appUser);
 
       setSuccessMsg(`أهلاً بك يا ${appUser.displayName}! تم تسجيل الدخول عبر Google بنجاح 🛡️`);
       setTimeout(() => {
@@ -431,11 +424,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       savedUsers.push(newUser);
       localStorage.setItem('socialcart_registered_users', JSON.stringify(savedUsers));
 
-      fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...newUser, isRegistration: true })
-      }).catch(() => {});
+      saveRemoteUser(newUser);
 
       setSuccessMsg(`تهانينا يا ${cleanName}! تم إنشاء حسابك الجديد بنجاح 🛡️`);
       setTimeout(() => {
