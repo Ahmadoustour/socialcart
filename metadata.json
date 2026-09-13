@@ -1,0 +1,6 @@
+{
+  "name": "سوشيال كارت - SocialCart",
+  "description": "منصة تواصل اجتماعي وسوق رقمي آمن متكامل للمنتجات والخدمات مع حماية المشتري والبائع",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
