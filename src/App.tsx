@@ -53,6 +53,7 @@ import {
   MediaItem,
   SellerReview
 } from './types';
+import { getConversationPartner, getConversationUnreadCount, normalizeUsername } from './utils/conversationUtils';
 import { INITIAL_CONVERSATIONS } from './mockData';
 
 const GUEST_USER: User = {
@@ -223,31 +224,19 @@ function loadUserConversations(userId: string, username?: string): Conversation[
 
             if (participants.includes(cleanUser)) {
               const existingIdx = userList.findIndex(c => c.id === poolConv.id);
-              let adapted = { ...poolConv };
-              // If this user is the recipient (not creator), adjust recipient labels to show creator
-              if (poolConv.participantUsername?.toLowerCase() === cleanUser && poolConv.creatorUsername) {
-                adapted = {
-                  ...adapted,
-                  participantUsername: poolConv.creatorUsername,
-                  participantDisplayName: poolConv.creatorDisplayName || poolConv.creatorUsername,
-                  participantAvatar: poolConv.creatorAvatar || poolConv.participantAvatar,
-                };
-              }
-
-              // Determine recipient unread count correctly
-              if (poolConv.unreadCountBy && typeof poolConv.unreadCountBy[cleanUser] === 'number') {
-                adapted.unreadCount = poolConv.unreadCountBy[cleanUser];
-              } else {
-                adapted.unreadCount = adapted.unreadCount || 0;
-              }
-
-              // Dynamically recalculate isMe for the currently viewing user
-              if (adapted.messages) {
-                adapted.messages = adapted.messages.map(m => ({
-                  ...m,
-                  isMe: m.senderUsername?.toLowerCase() === cleanUser
-                }));
-              }
+              const adapted: Conversation = {
+                ...poolConv,
+                unreadCount: getConversationUnreadCount(poolConv, cleanUser),
+                messages: Array.isArray(poolConv.messages)
+                  ? poolConv.messages.map(m => {
+                      const sU = normalizeUsername(m.senderUsername);
+                      return {
+                        ...m,
+                        isMe: Boolean(sU && sU === cleanUser)
+                      };
+                    })
+                  : []
+              };
 
               if (existingIdx >= 0) {
                 userList[existingIdx] = adapted;
@@ -1011,66 +1000,62 @@ export default function App() {
 
   // Helper to accurately extract unread count for current user
   const getConvUnread = useCallback((c: Conversation) => {
-    const myU = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
-    if (myU && c.unreadCountBy && typeof c.unreadCountBy[myU] === 'number') {
-      return c.unreadCountBy[myU];
-    }
-    return c.unreadCount || 0;
-  }, [currentUser.username]);
+    const activeId = (activeTab === 'messages') 
+      ? (c.type === 'market' ? selectedMarketConvId : selectedSocialConvId)
+      : null;
+    return getConversationUnreadCount(c, currentUser.username, activeId);
+  }, [activeTab, selectedMarketConvId, selectedSocialConvId, currentUser.username]);
 
   // Derived counts with dynamic clearing when opened
   // Explicit requirement: The bottom tab badge displays the count of distinct PEOPLE (unique senders) who messaged me with unread messages
   const unreadSocialSendersCount = useMemo(() => {
     const senders = new Set<string>();
-    const myUsername = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
     conversations.forEach(c => {
       if (c.type === 'social') {
         const count = getConvUnread(c);
         if (count > 0) {
-          let other = (c.participantUsername || '').toLowerCase().trim().replace(/^@/, '');
-          if (myUsername && other === myUsername && c.creatorUsername) {
-            other = c.creatorUsername.toLowerCase().trim().replace(/^@/, '');
+          const partner = getConversationPartner(c, currentUser);
+          const partnerKey = normalizeUsername(partner.username) || partner.id || c.id;
+          if (partnerKey) {
+            senders.add(partnerKey);
           }
-          senders.add(other || c.participantId || c.id);
         }
       }
     });
     return senders.size;
-  }, [conversations, currentUser.username, getConvUnread]);
+  }, [conversations, currentUser, getConvUnread]);
 
   const unreadMarketSendersCount = useMemo(() => {
     const senders = new Set<string>();
-    const myUsername = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
     conversations.forEach(c => {
       if (c.type === 'market') {
         const count = getConvUnread(c);
         if (count > 0) {
-          let other = (c.participantUsername || '').toLowerCase().trim().replace(/^@/, '');
-          if (myUsername && other === myUsername && c.creatorUsername) {
-            other = c.creatorUsername.toLowerCase().trim().replace(/^@/, '');
+          const partner = getConversationPartner(c, currentUser);
+          const partnerKey = normalizeUsername(partner.username) || partner.id || c.id;
+          if (partnerKey) {
+            senders.add(partnerKey);
           }
-          senders.add(other || c.participantId || c.id);
         }
       }
     });
     return senders.size;
-  }, [conversations, currentUser.username, getConvUnread]);
+  }, [conversations, currentUser, getConvUnread]);
 
   const totalUnreadSendersCount = useMemo(() => {
     const senders = new Set<string>();
-    const myUsername = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
     conversations.forEach(c => {
       const count = getConvUnread(c);
       if (count > 0) {
-        let other = (c.participantUsername || '').toLowerCase().trim().replace(/^@/, '');
-        if (myUsername && other === myUsername && c.creatorUsername) {
-          other = c.creatorUsername.toLowerCase().trim().replace(/^@/, '');
+        const partner = getConversationPartner(c, currentUser);
+        const partnerKey = normalizeUsername(partner.username) || partner.id || c.id;
+        if (partnerKey) {
+          senders.add(partnerKey);
         }
-        senders.add(other || c.participantId || c.id);
       }
     });
     return senders.size;
-  }, [conversations, currentUser.username, getConvUnread]);
+  }, [conversations, currentUser, getConvUnread]);
 
   const unreadSocialMessagesCount = useMemo(() => {
     return conversations
@@ -1113,37 +1098,101 @@ export default function App() {
 
   // Handlers for marking conversations as read
   const handleMarkConversationRead = useCallback((convId: string) => {
+    if (!convId) return;
+    const userKey = normalizeUsername(currentUser.username);
+    const nowIso = new Date().toISOString();
     markRemoteConversationRead(convId, currentUser.username);
+
     setConversations(prev => {
-      const userKey = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
       const next = prev.map(c => {
         if (c.id === convId) {
           const nextUnreadBy = { ...(c.unreadCountBy || {}) };
+          const nextLastReadBy = { ...(c.lastReadAtBy || {}) };
           if (userKey) {
             nextUnreadBy[userKey] = 0;
+            nextLastReadBy[userKey] = nowIso;
           }
-          return { ...c, unreadCount: 0, unreadCountBy: nextUnreadBy };
+          const updatedMsgs = Array.isArray(c.messages)
+            ? c.messages.map(m => {
+                const readList = Array.isArray(m.readBy) ? m.readBy.map(normalizeUsername) : [];
+                if (userKey && !readList.includes(userKey)) {
+                  return { ...m, readBy: [...readList, userKey] };
+                }
+                return m;
+              })
+            : [];
+
+          return {
+            ...c,
+            unreadCount: 0,
+            unreadCountBy: nextUnreadBy,
+            lastReadAtBy: nextLastReadBy,
+            messages: updatedMsgs
+          };
         }
         return c;
       });
       const key = getUserStorageKey('socialcart_conversations', currentUser.id);
       localStorage.setItem(key, JSON.stringify(next));
+
+      try {
+        const poolRaw = localStorage.getItem('socialcart_shared_conversations_pool');
+        if (poolRaw) {
+          const pool = JSON.parse(poolRaw);
+          if (Array.isArray(pool)) {
+            const updatedPool = pool.map((pc: any) => {
+              if (pc.id === convId) {
+                const uBy = { ...(pc.unreadCountBy || {}) };
+                const lrBy = { ...(pc.lastReadAtBy || {}) };
+                if (userKey) {
+                  uBy[userKey] = 0;
+                  lrBy[userKey] = nowIso;
+                }
+                return { ...pc, unreadCountBy: uBy, lastReadAtBy: lrBy };
+              }
+              return pc;
+            });
+            localStorage.setItem('socialcart_shared_conversations_pool', JSON.stringify(updatedPool));
+          }
+        }
+      } catch {}
+
       return next;
     });
   }, [currentUser.id, currentUser.username]);
 
   const handleMarkAllConversationsRead = useCallback((type?: 'social' | 'market') => {
     const targetType = type || activeSection;
-    const userKey = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
+    const userKey = normalizeUsername(currentUser.username);
+    const nowIso = new Date().toISOString();
+
     setConversations(prev => {
       const next = prev.map(c => {
         if (c.type === targetType) {
           markRemoteConversationRead(c.id, currentUser.username);
           const nextUnreadBy = { ...(c.unreadCountBy || {}) };
+          const nextLastReadBy = { ...(c.lastReadAtBy || {}) };
           if (userKey) {
             nextUnreadBy[userKey] = 0;
+            nextLastReadBy[userKey] = nowIso;
           }
-          return { ...c, unreadCount: 0, unreadCountBy: nextUnreadBy };
+          const updatedMsgs = Array.isArray(c.messages)
+            ? c.messages.map(m => {
+                const readList = Array.isArray(m.readBy) ? m.readBy.map(normalizeUsername) : [];
+                if (userKey && !readList.includes(userKey)) {
+                  return { ...m, readBy: [...readList, userKey] };
+                }
+                return m;
+              })
+            : [];
+
+          return {
+            ...c,
+            unreadCount: 0,
+            unreadCountBy: nextUnreadBy,
+            lastReadAtBy: nextLastReadBy,
+            messages: updatedMsgs
+          };
         }
         return c;
       });
@@ -1721,6 +1770,7 @@ export default function App() {
   // 7. Messages Handlers
   const handleSendMessage = (conversationId: string, text: string, media?: MediaItem[]) => {
     const nowIso = new Date().toISOString();
+    const myU = normalizeUsername(currentUser.username);
     const newMsg: Message = {
       id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       senderId: currentUser.id,
@@ -1729,29 +1779,21 @@ export default function App() {
       text,
       media,
       createdAt: nowIso,
-      isMe: true
+      isMe: true,
+      readBy: myU ? [myU] : []
     };
 
     const targetConv = conversations.find(c => c.id === conversationId);
-    const myU = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
     
     // Accurately determine the other party in the conversation
-    let otherUser = '';
-    const p1 = (targetConv?.creatorUsername || '').toLowerCase().trim().replace(/^@/, '');
-    const p2 = (targetConv?.participantUsername || '').toLowerCase().trim().replace(/^@/, '');
-    if (p1 && p1 !== myU) {
-      otherUser = p1;
-    } else if (p2 && p2 !== myU) {
-      otherUser = p2;
-    } else if (Array.isArray(targetConv?.participants)) {
-      otherUser = targetConv.participants
-        .map(p => (p || '').toLowerCase().trim().replace(/^@/, ''))
-        .find(p => p && p !== myU) || '';
-    }
+    const partner = targetConv ? getConversationPartner(targetConv, currentUser) : null;
+    const otherUser = normalizeUsername(partner?.username);
 
     const nextUnreadBy = { ...(targetConv?.unreadCountBy || {}) };
+    const nextLastReadBy = { ...(targetConv?.lastReadAtBy || {}) };
     if (myU) {
       nextUnreadBy[myU] = 0;
+      nextLastReadBy[myU] = nowIso;
     }
     if (otherUser) {
       nextUnreadBy[otherUser] = (nextUnreadBy[otherUser] || 0) + 1;
@@ -1783,6 +1825,7 @@ export default function App() {
       lastMessageTime: nowIso,
       unreadCount: 0,
       unreadCountBy: nextUnreadBy,
+      lastReadAtBy: nextLastReadBy,
       messages: updatedMessages
     };
 
@@ -1938,6 +1981,9 @@ export default function App() {
         [myU]: 0,
         ...(trimmedMessage ? { [targetU]: 1 } : {})
       },
+      lastReadAtBy: {
+        [myU]: nowIso
+      },
       messages: trimmedMessage
         ? [
             {
@@ -1947,7 +1993,8 @@ export default function App() {
               senderAvatar: currentUser.avatar,
               text: trimmedMessage,
               createdAt: nowIso,
-              isMe: true
+              isMe: true,
+              readBy: myU ? [myU] : []
             }
           ]
         : []

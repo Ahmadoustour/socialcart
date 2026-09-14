@@ -1335,10 +1335,19 @@ app.get(["/api/conversations", "/conversations"], (req, res) => {
         );
         return Boolean(isPart || isId);
       }).map(c => {
-        // Return caller's actual unread count
-        const userUnread = (cleanUser && c.unreadCountBy && typeof c.unreadCountBy[cleanUser] === "number")
-          ? c.unreadCountBy[cleanUser]
-          : (c.unreadCount || 0);
+        // Return caller's actual unread count specifically for this recipient
+        let userUnread = 0;
+        if (cleanUser && c.unreadCountBy && typeof c.unreadCountBy[cleanUser] === "number") {
+          userUnread = Math.max(0, c.unreadCountBy[cleanUser]);
+        } else if (Array.isArray(c.messages) && cleanUser) {
+          userUnread = c.messages.filter((m: any) => {
+            if (!m) return false;
+            const sender = (m.senderUsername || "").toLowerCase().trim().replace(/^@+/, "");
+            if (sender === cleanUser) return false;
+            const readList = Array.isArray(m.readBy) ? m.readBy.map((u: string) => (u || "").toLowerCase().trim().replace(/^@+/, "")) : [];
+            return !readList.includes(cleanUser);
+          }).length;
+        }
         return {
           ...c,
           unreadCount: userUnread
@@ -1484,9 +1493,20 @@ app.put(["/api/conversations/:id/read", "/conversations/:id/read"], (req, res) =
     const existingIndex = convs.findIndex(c => c.id === id);
     if (existingIndex >= 0) {
       const conv = convs[existingIndex];
-      const cleanU = (username || "").toLowerCase().trim().replace(/^@/, "");
+      const cleanU = (username || "").toLowerCase().trim().replace(/^@+/, "");
+      const nowIso = new Date().toISOString();
       if (cleanU) {
         conv.unreadCountBy = { ...(conv.unreadCountBy || {}), [cleanU]: 0 };
+        conv.lastReadAtBy = { ...(conv.lastReadAtBy || {}), [cleanU]: nowIso };
+        if (Array.isArray(conv.messages)) {
+          conv.messages = conv.messages.map((m: any) => {
+            const currentRead = Array.isArray(m.readBy) ? m.readBy : [];
+            if (!currentRead.includes(cleanU)) {
+              return { ...m, readBy: [...currentRead, cleanU] };
+            }
+            return m;
+          });
+        }
       }
       conv.unreadCount = 0;
       convs[existingIndex] = conv;

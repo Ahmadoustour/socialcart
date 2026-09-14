@@ -22,50 +22,9 @@ import { Conversation, User, MediaItem } from '../types';
 import { scanUrlOrFile } from '../utils/security';
 import { formatMessageTime, formatConversationTime } from '../utils/dateUtils';
 import { MediaLightboxModal } from './MediaLightboxModal';
+import { getConversationPartner, getConversationUnreadCount, normalizeUsername } from '../utils/conversationUtils';
 
-// Helper to determine the OTHER participant in a conversation relative to the active user
-export function getConversationPartner(conv: Conversation, currentUser?: User) {
-  const cleanCurrent = (currentUser?.username || '').replace(/^@/, '').toLowerCase().trim();
-  const cleanCurrentId = (currentUser?.id || '').trim();
-
-  const isCreatorMe = Boolean(
-    (cleanCurrentId && conv.creatorId && conv.creatorId === cleanCurrentId) ||
-    (cleanCurrent && conv.creatorUsername && conv.creatorUsername.replace(/^@/, '').toLowerCase().trim() === cleanCurrent)
-  );
-
-  const isParticipantMe = Boolean(
-    (cleanCurrentId && conv.participantId && conv.participantId === cleanCurrentId) ||
-    (cleanCurrent && conv.participantUsername && conv.participantUsername.replace(/^@/, '').toLowerCase().trim() === cleanCurrent)
-  );
-
-  if (isCreatorMe && !isParticipantMe) {
-    return {
-      username: conv.participantUsername,
-      displayName: conv.participantDisplayName,
-      avatar: conv.participantAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-      id: conv.participantId,
-      isVerified: conv.isVerified
-    };
-  }
-
-  if (isParticipantMe && !isCreatorMe) {
-    return {
-      username: conv.creatorUsername || conv.participantUsername,
-      displayName: conv.creatorDisplayName || conv.participantDisplayName,
-      avatar: conv.creatorAvatar || conv.participantAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-      id: conv.creatorId || conv.participantId,
-      isVerified: conv.isVerified
-    };
-  }
-
-  return {
-    username: conv.participantUsername,
-    displayName: conv.participantDisplayName,
-    avatar: conv.participantAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-    id: conv.participantId,
-    isVerified: conv.isVerified
-  };
-}
+export { getConversationPartner };
 
 interface MessagesHubProps {
   conversations: Conversation[];
@@ -114,6 +73,10 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
     }
     return '';
   });
+
+  const unreadSectionCount = useMemo(() => {
+    return modeConversations.reduce((sum, c) => sum + getConversationUnreadCount(c, currentUser.username, activeConvId), 0);
+  }, [modeConversations, currentUser.username, activeConvId]);
 
   const [showMobileChat, setShowMobileChat] = useState<boolean>(() => {
     return Boolean(initialActiveConvId && modeConversations.some(c => c.id === initialActiveConvId));
@@ -388,8 +351,9 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
     setChatToDelete(null);
   };
 
-  const unreadSectionCount = modeConversations.reduce((sum, c) => sum + c.unreadCount, 0);
-  const unreadSectionSendersCount = modeConversations.filter(c => c.unreadCount > 0).length;
+  const unreadSectionSendersCount = useMemo(() => {
+    return modeConversations.filter(c => getConversationUnreadCount(c, currentUser?.username, activeConvId) > 0).length;
+  }, [modeConversations, currentUser?.username, activeConvId]);
 
   return (
     <div className="max-w-6xl mx-auto pb-16 animate-fadeIn">
@@ -548,22 +512,20 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                 const partner = getConversationPartner(conv, currentUser);
                 const isActive = conv.id === activeConvId;
 
-                // 1. Calculate unread count specifically for current user
-                const myU = (currentUser?.username || '').toLowerCase().trim().replace(/^@/, '');
-                const userUnread = (myU && conv.unreadCountBy && typeof conv.unreadCountBy[myU] === 'number')
-                  ? conv.unreadCountBy[myU]
-                  : (conv.unreadCount || 0);
+                // Calculate unread count specifically for current user
+                const userUnread = getConversationUnreadCount(conv, currentUser?.username, activeConvId);
                 const hasUnread = userUnread > 0;
 
-                // 2. Sort messages to reliably identify the latest message
+                // Sort messages to reliably identify the latest message
                 const sortedMsgs = Array.isArray(conv.messages) && conv.messages.length > 0
                   ? conv.messages.slice().sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
                   : [];
                 const latestMsg = sortedMsgs.length > 0 ? sortedMsgs[sortedMsgs.length - 1] : null;
 
+                const myU = normalizeUsername(currentUser?.username);
                 const isLastMsgFromMe = latestMsg 
                   ? (latestMsg.senderId === currentUser?.id || 
-                     (latestMsg.senderUsername && myU && latestMsg.senderUsername.toLowerCase().trim().replace(/^@/, '') === myU) ||
+                     (latestMsg.senderUsername && myU && normalizeUsername(latestMsg.senderUsername) === myU) ||
                      Boolean(latestMsg.isMe))
                   : false;
 
@@ -572,7 +534,6 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                   : (conv.lastMessage || 'لا توجد رسائل');
 
                 const displayTime = latestMsg?.createdAt || conv.lastMessageTime;
-                const messageCount = sortedMsgs.length;
 
                 return (
                   <div
@@ -600,7 +561,7 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                           className={`absolute -top-1.5 -right-1.5 text-white text-[9px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center font-bold shadow-xs leading-none z-10 select-none ${
                             isMarket ? 'bg-emerald-500' : 'bg-indigo-600'
                           }`}
-                          title={`${userUnread} رسائل جديدة`}
+                          title={`${userUnread} رسائل غير مقروءة`}
                         >
                           {userUnread > 99 ? '+99' : userUnread}
                         </span>
@@ -628,16 +589,7 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                           )}
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
-                          {/* Message count badge on each chat */}
-                          <span 
-                            className="text-[10px] text-slate-400 dark:text-slate-500 font-medium px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80 shrink-0 flex items-center gap-1"
-                            title={`إجمالي عدد الرسائل: ${messageCount}`}
-                          >
-                            <MessageSquare className="w-2.5 h-2.5" />
-                            <span>{messageCount}</span>
-                          </span>
-
-                          {/* Unread counter on the chat card - disappears on read */}
+                          {/* Unread counter on the chat card - disappears immediately on read/open */}
                           {hasUnread && (
                             <span 
                               className={`text-white text-[9px] min-w-[16px] h-4 px-1.5 rounded-full flex items-center justify-center font-bold shadow-xs leading-none select-none ${
@@ -789,18 +741,6 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                       {activeConversation.relatedProductTitle}
                     </span>
                   )}
-                  {(() => {
-                    const activeIncoming = (activeConversation.messages || []).filter(m => !m.isMe).length;
-                    return activeIncoming > 0 ? (
-                      <span 
-                        className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700/80" 
-                        title={`إجمالي الرسائل الواردة إليك في هذه المحادثة: ${activeIncoming}`}
-                      >
-                        <span className="font-black text-indigo-600 dark:text-indigo-400">{activeIncoming}</span>
-                        <span className="text-[10px] text-slate-400 font-normal">{activeIncoming === 1 ? 'رسالة واردة لك' : 'رسائل واردة لك'}</span>
-                      </span>
-                    ) : null;
-                  })()}
                   {onToggleUnread && (
                     <button
                       type="button"

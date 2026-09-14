@@ -140,6 +140,7 @@ export interface Message {
   media?: MediaItem[];
   createdAt: string;
   isMe: boolean;
+  readBy?: string[];
 }
 
 export interface Conversation {
@@ -161,6 +162,7 @@ export interface Conversation {
   lastMessageTime: string;
   unreadCount: number;
   unreadCountBy?: Record<string, number>;
+  lastReadAtBy?: Record<string, string>;
   messages: Message[];
 }
 

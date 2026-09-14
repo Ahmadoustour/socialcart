@@ -475,7 +475,10 @@ export async function sendRemoteMessage(
 }
 
 export async function markRemoteConversationRead(convId: string, username: string): Promise<void> {
-  const cleanU = (username || '').toLowerCase();
+  const cleanU = (username || '').toLowerCase().trim().replace(/^@+/, '');
+  if (!cleanU) return;
+  const nowIso = new Date().toISOString();
+
   if (isFirebaseReady()) {
     try {
       const convRef = doc(db, 'conversations', convId);
@@ -484,9 +487,22 @@ export async function markRemoteConversationRead(convId: string, username: strin
         const data = snap.data() as Conversation;
         const unreadBy = { ...(data.unreadCountBy || {}) };
         unreadBy[cleanU] = 0;
+        const lastReadAtBy = { ...(data.lastReadAtBy || {}) };
+        lastReadAtBy[cleanU] = nowIso;
+
+        const msgs = Array.isArray(data.messages) ? data.messages.map(m => {
+          const currentRead = Array.isArray(m.readBy) ? m.readBy : [];
+          if (!currentRead.includes(cleanU)) {
+            return { ...m, readBy: [...currentRead, cleanU] };
+          }
+          return m;
+        }) : [];
+
         await updateDoc(convRef, {
           unreadCount: 0,
-          unreadCountBy: unreadBy
+          unreadCountBy: unreadBy,
+          lastReadAtBy: lastReadAtBy,
+          messages: msgs
         });
       }
     } catch (err) {}
@@ -498,6 +514,9 @@ export async function markRemoteConversationRead(convId: string, username: strin
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: cleanU })
     });
+    try {
+      window.dispatchEvent(new CustomEvent('socialcart_conversation_updated', { detail: { convId } }));
+    } catch {}
   } catch (err) {}
 }
 
