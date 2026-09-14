@@ -914,12 +914,22 @@ app.post("/api/posts", (req, res) => {
     const posts = readJsonFile<any[]>(POSTS_FILE, []);
     const existingIndex = posts.findIndex(p => p.id === post.id);
     if (existingIndex >= 0) {
-      posts[existingIndex] = { ...posts[existingIndex], ...post };
+      const existing = posts[existingIndex];
+      // Safely preserve likedUserIds so periodic post saves never wipe out atomic likes
+      const existingLikes = Array.isArray(existing.likedUserIds) ? existing.likedUserIds : [];
+      const incomingLikes = Array.isArray(post.likedUserIds) ? post.likedUserIds : [];
+      const mergedLikes = Array.from(new Set([...existingLikes, ...incomingLikes]));
+      posts[existingIndex] = {
+        ...existing,
+        ...post,
+        likedUserIds: mergedLikes,
+        likesCount: Math.max(existing.likesCount || 0, post.likesCount || 0, mergedLikes.length)
+      };
     } else {
       posts.unshift(post);
     }
     writeJsonFile(POSTS_FILE, posts);
-    res.json(post);
+    res.json(posts[existingIndex >= 0 ? existingIndex : 0]);
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Failed to save post" });
   }
@@ -942,25 +952,25 @@ app.post("/api/posts/:id/like", (req, res) => {
     let likedUserIds: string[] = Array.isArray(post.likedUserIds) ? [...post.likedUserIds] : [];
     
     const cleanU = (username || "").replace(/^@/, "").toLowerCase().trim();
-    const cleanId = (userId || "").trim();
+    const cleanId = (userId || "").trim().toLowerCase();
 
     const isAlreadyLiked = likedUserIds.some(uid => {
-      const uLower = (uid || "").toLowerCase().trim();
-      return (cleanId && uLower === cleanId.toLowerCase()) || (cleanU && uLower === cleanU);
+      const uLower = (uid || "").replace(/^@/, "").toLowerCase().trim();
+      return (cleanId && uLower === cleanId) || (cleanU && uLower === cleanU);
     });
 
     if (isAlreadyLiked) {
       // Remove like for this user
       likedUserIds = likedUserIds.filter(uid => {
-        const uLower = (uid || "").toLowerCase().trim();
-        const matchesId = cleanId ? uLower === cleanId.toLowerCase() : false;
+        const uLower = (uid || "").replace(/^@/, "").toLowerCase().trim();
+        const matchesId = cleanId ? uLower === cleanId : false;
         const matchesUser = cleanU ? uLower === cleanU : false;
         return !matchesId && !matchesUser;
       });
     } else {
-      // Add like using primary identifier
+      // Add like using primary identifier (prefer user id, fallback to clean username)
       const targetIdentifier = cleanId || cleanU;
-      if (!likedUserIds.includes(targetIdentifier)) {
+      if (!likedUserIds.some(uid => uid.toLowerCase().trim() === targetIdentifier)) {
         likedUserIds.push(targetIdentifier);
       }
     }
@@ -1268,17 +1278,54 @@ app.post(["/api/orders", "/orders"], (req, res) => {
 app.get(["/api/conversations", "/conversations"], (req, res) => {
   try {
     const { userId, username } = req.query;
-    const convs = readJsonFile<any[]>(CONVERSATIONS_FILE, []);
+    let convs = readJsonFile<any[]>(CONVERSATIONS_FILE, []);
+
+    // 1. Automatically consolidate any legacy duplicate conversations between the same two users
+    const consolidatedMap = new Map<string, any>();
+    convs.forEach(c => {
+      if (!c || !c.id) return;
+      const u1 = (c.creatorUsername || "").trim().toLowerCase().replace(/^@/, "");
+      const u2 = (c.participantUsername || "").trim().toLowerCase().replace(/^@/, "");
+      const type = c.type || "social";
+      const relProd = (c.relatedProductTitle || "").trim().toLowerCase();
+      // Canonical key for pairwise conversation
+      const pairKey = [u1, u2].sort().join("::") + `::${type}` + (type === "market" && relProd ? `::${relProd}` : "");
+
+      if (!consolidatedMap.has(pairKey)) {
+        consolidatedMap.set(pairKey, { ...c });
+      } else {
+        const existing = consolidatedMap.get(pairKey);
+        // Merge messages without duplicates
+        const msgMap = new Map<string, any>();
+        (existing.messages || []).forEach((m: any) => { if (m && m.id) msgMap.set(m.id, m); });
+        (c.messages || []).forEach((m: any) => { if (m && m.id) msgMap.set(m.id, m); });
+        const mergedMsgs = Array.from(msgMap.values()).sort((a, b) => 
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+        const lastM = mergedMsgs.length > 0 ? mergedMsgs[mergedMsgs.length - 1] : null;
+        existing.messages = mergedMsgs;
+        if (lastM) {
+          existing.lastMessage = lastM.text || (lastM.media?.length ? "ملف وسائط مرفق" : "");
+          existing.lastMessageTime = lastM.createdAt;
+        }
+        existing.unreadCountBy = { ...(existing.unreadCountBy || {}), ...(c.unreadCountBy || {}) };
+        consolidatedMap.set(pairKey, existing);
+      }
+    });
+
+    convs = Array.from(consolidatedMap.values());
+    writeJsonFile(CONVERSATIONS_FILE, convs);
+
     if (userId || username) {
       const cleanUser = typeof username === "string" ? username.trim().toLowerCase().replace(/^@/, "") : "";
       const cleanId = typeof userId === "string" ? userId.trim() : "";
       const filtered = convs.filter(c => {
         if (!c || !c.id) return false;
-        const participants = Array.isArray(c.participants) ? c.participants.map((p: string) => (p || "").toLowerCase()) : [];
+        const participants = Array.isArray(c.participants) ? c.participants.map((p: string) => (p || "").toLowerCase().replace(/^@/, "")) : [];
         const isPart = cleanUser && (
           participants.includes(cleanUser) ||
-          (c.participantUsername && c.participantUsername.toLowerCase() === cleanUser) ||
-          (c.creatorUsername && c.creatorUsername.toLowerCase() === cleanUser)
+          (c.participantUsername && c.participantUsername.toLowerCase().replace(/^@/, "") === cleanUser) ||
+          (c.creatorUsername && c.creatorUsername.toLowerCase().replace(/^@/, "") === cleanUser)
         );
         const isId = cleanId && (
           c.userId === cleanId || 
@@ -1287,6 +1334,15 @@ app.get(["/api/conversations", "/conversations"], (req, res) => {
           c.participantId === `usr_${cleanUser}`
         );
         return Boolean(isPart || isId);
+      }).map(c => {
+        // Return caller's actual unread count
+        const userUnread = (cleanUser && c.unreadCountBy && typeof c.unreadCountBy[cleanUser] === "number")
+          ? c.unreadCountBy[cleanUser]
+          : (c.unreadCount || 0);
+        return {
+          ...c,
+          unreadCount: userUnread
+        };
       });
       return res.json(filtered);
     }
@@ -1303,14 +1359,55 @@ app.post(["/api/conversations", "/conversations"], (req, res) => {
       return res.status(400).json({ error: "Invalid conversation data" });
     }
     const convs = readJsonFile<any[]>(CONVERSATIONS_FILE, []);
-    const existingIndex = convs.findIndex(c => c.id === conv.id);
+    const cleanU1 = (conv.creatorUsername || "").toLowerCase().trim().replace(/^@/, "");
+    const cleanU2 = (conv.participantUsername || "").toLowerCase().trim().replace(/^@/, "");
+    const targetType = conv.type || "social";
+    const productTitle = (conv.relatedProductTitle || "").trim().toLowerCase();
+
+    // Check by ID or pairwise participants to prevent duplicate split chats
+    let existingIndex = convs.findIndex(c => c.id === conv.id);
+    if (existingIndex < 0 && cleanU1 && cleanU2) {
+      existingIndex = convs.findIndex(c => {
+        if (c.type !== targetType) return false;
+        const cu1 = (c.creatorUsername || "").toLowerCase().trim().replace(/^@/, "");
+        const cu2 = (c.participantUsername || "").toLowerCase().trim().replace(/^@/, "");
+        const parts = Array.isArray(c.participants) ? c.participants.map((p: string) => (p || "").toLowerCase().trim().replace(/^@/, "")) : [];
+        const isPair = (cu1 === cleanU1 && cu2 === cleanU2) || (cu1 === cleanU2 && cu2 === cleanU1) ||
+                       (parts.includes(cleanU1) && parts.includes(cleanU2));
+        if (targetType === "market" && productTitle) {
+          return isPair && (c.relatedProductTitle || "").toLowerCase().trim() === productTitle;
+        }
+        return isPair;
+      });
+    }
+
     if (existingIndex >= 0) {
-      convs[existingIndex] = { ...convs[existingIndex], ...conv };
+      const existing = convs[existingIndex];
+      // Merge messages without duplicates
+      const msgMap = new Map<string, any>();
+      (existing.messages || []).forEach((m: any) => { if (m && m.id) msgMap.set(m.id, m); });
+      (conv.messages || []).forEach((m: any) => { if (m && m.id) msgMap.set(m.id, m); });
+      const mergedMsgs = Array.from(msgMap.values()).sort((a, b) => 
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+      const lastMsg = mergedMsgs.length > 0 ? mergedMsgs[mergedMsgs.length - 1] : null;
+
+      convs[existingIndex] = {
+        ...existing,
+        ...conv,
+        id: existing.id, // Preserve existing ID
+        messages: mergedMsgs,
+        lastMessage: lastMsg ? (lastMsg.text || (lastMsg.media?.length ? "ملف وسائط مرفق" : "")) : existing.lastMessage,
+        lastMessageTime: lastMsg ? lastMsg.createdAt : existing.lastMessageTime,
+        unreadCountBy: { ...(existing.unreadCountBy || {}), ...(conv.unreadCountBy || {}) }
+      };
+      writeJsonFile(CONVERSATIONS_FILE, convs);
+      return res.json(convs[existingIndex]);
     } else {
       convs.unshift(conv);
+      writeJsonFile(CONVERSATIONS_FILE, convs);
+      return res.json(conv);
     }
-    writeJsonFile(CONVERSATIONS_FILE, convs);
-    res.json(convs[existingIndex >= 0 ? existingIndex : 0]);
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Failed to persist conversation" });
   }
@@ -1319,20 +1416,37 @@ app.post(["/api/conversations", "/conversations"], (req, res) => {
 app.post(["/api/conversations/:id/messages", "/conversations/:id/messages"], (req, res) => {
   try {
     const { id } = req.params;
-    const { message, unreadCountBy } = req.body;
+    const { message, unreadCountBy, conversation } = req.body;
     if (!message || !message.id) {
       return res.status(400).json({ error: "Invalid message data" });
     }
     const convs = readJsonFile<any[]>(CONVERSATIONS_FILE, []);
-    const existingIndex = convs.findIndex(c => c.id === id);
+    let existingIndex = convs.findIndex(c => c.id === id);
+
+    // Fallback: If not found by ID, look up by conversation participants if provided
+    if (existingIndex < 0 && conversation) {
+      const cleanU1 = (conversation.creatorUsername || "").toLowerCase().trim().replace(/^@/, "");
+      const cleanU2 = (conversation.participantUsername || "").toLowerCase().trim().replace(/^@/, "");
+      if (cleanU1 && cleanU2) {
+        existingIndex = convs.findIndex(c => {
+          if (c.type !== conversation.type) return false;
+          const cu1 = (c.creatorUsername || "").toLowerCase().trim().replace(/^@/, "");
+          const cu2 = (c.participantUsername || "").toLowerCase().trim().replace(/^@/, "");
+          return (cu1 === cleanU1 && cu2 === cleanU2) || (cu1 === cleanU2 && cu2 === cleanU1);
+        });
+      }
+    }
+
     if (existingIndex >= 0) {
       const conv = convs[existingIndex];
       conv.messages = Array.isArray(conv.messages) ? conv.messages : [];
       if (!conv.messages.some((m: any) => m.id === message.id)) {
         conv.messages.push(message);
       }
-      conv.lastMessage = message.text || (message.media?.length ? "مرفق وسائط" : "");
-      conv.lastMessageTime = message.createdAt || new Date().toISOString();
+      conv.messages.sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      const lastMsg = conv.messages[conv.messages.length - 1];
+      conv.lastMessage = lastMsg.text || (lastMsg.media?.length ? "ملف وسائط مرفق" : "");
+      conv.lastMessageTime = lastMsg.createdAt || new Date().toISOString();
       if (unreadCountBy) {
         conv.unreadCountBy = { ...(conv.unreadCountBy || {}), ...unreadCountBy };
       }
@@ -1340,6 +1454,22 @@ app.post(["/api/conversations/:id/messages", "/conversations/:id/messages"], (re
       writeJsonFile(CONVERSATIONS_FILE, convs);
       return res.json(conv);
     }
+
+    // Fallback if not found: create conversation so message is NEVER lost
+    if (conversation) {
+      const newConv = {
+        ...conversation,
+        id,
+        messages: [message],
+        lastMessage: message.text || (message.media?.length ? "ملف وسائط مرفق" : ""),
+        lastMessageTime: message.createdAt || new Date().toISOString(),
+        unreadCountBy: unreadCountBy || {}
+      };
+      convs.unshift(newConv);
+      writeJsonFile(CONVERSATIONS_FILE, convs);
+      return res.json(newConv);
+    }
+
     res.status(404).json({ error: "Conversation not found" });
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Failed to add message" });
@@ -1354,8 +1484,9 @@ app.put(["/api/conversations/:id/read", "/conversations/:id/read"], (req, res) =
     const existingIndex = convs.findIndex(c => c.id === id);
     if (existingIndex >= 0) {
       const conv = convs[existingIndex];
-      if (username && conv.unreadCountBy) {
-        conv.unreadCountBy[username.toLowerCase()] = 0;
+      const cleanU = (username || "").toLowerCase().trim().replace(/^@/, "");
+      if (cleanU) {
+        conv.unreadCountBy = { ...(conv.unreadCountBy || {}), [cleanU]: 0 };
       }
       conv.unreadCount = 0;
       convs[existingIndex] = conv;

@@ -425,7 +425,8 @@ export async function saveRemoteConversation(conv: Conversation): Promise<void> 
 export async function sendRemoteMessage(
   convId: string, 
   message: Message, 
-  unreadCountBy?: Record<string, number>
+  unreadCountBy?: Record<string, number>,
+  conversation?: Conversation
 ): Promise<void> {
   // 1. Firebase Firestore
   if (isFirebaseReady()) {
@@ -438,9 +439,18 @@ export async function sendRemoteMessage(
         const updatedMessages = [...currentMessages, message];
         await updateDoc(convRef, {
           messages: updatedMessages,
-          lastMessage: message.text || (message.media?.length ? 'مرفق وسائط' : ''),
+          lastMessage: message.text || (message.media?.length ? 'ملف وسائط مرفق' : ''),
           lastMessageTime: message.createdAt,
           unreadCountBy: { ...(data.unreadCountBy || {}), ...unreadCountBy }
+        });
+      } else if (conversation) {
+        await setDoc(convRef, {
+          ...conversation,
+          id: convId,
+          messages: [message],
+          lastMessage: message.text || (message.media?.length ? 'ملف وسائط مرفق' : ''),
+          lastMessageTime: message.createdAt,
+          unreadCountBy: unreadCountBy || {}
         });
       }
     } catch (err) {
@@ -453,7 +463,7 @@ export async function sendRemoteMessage(
     await fetch(`/api/conversations/${convId}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, unreadCountBy })
+      body: JSON.stringify({ message, unreadCountBy, conversation })
     });
     // Trigger immediate local sync across active tabs and components
     try {

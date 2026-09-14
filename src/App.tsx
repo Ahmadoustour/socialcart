@@ -22,6 +22,7 @@ import { onAuthStateChanged, signOut, updatePassword, updateProfile, updateEmail
 import {
   fetchRemotePosts,
   saveRemotePost,
+  toggleRemotePostLike,
   deleteRemotePost,
   subscribeToRemotePosts,
   fetchRemoteProducts,
@@ -667,9 +668,25 @@ export default function App() {
               const mergedMessages = Array.from(msgMap.values()).sort((a, b) =>
                 new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
               );
-              map.set(c.id, { ...existing, ...c, messages: mergedMessages });
+              const lastMsg = mergedMessages.length > 0 ? mergedMessages[mergedMessages.length - 1] : null;
+              map.set(c.id, {
+                ...existing,
+                ...c,
+                lastMessage: lastMsg ? (lastMsg.text || (lastMsg.media?.length ? 'ملف وسائط مرفق' : '')) : (c.lastMessage || existing.lastMessage),
+                lastMessageTime: lastMsg ? lastMsg.createdAt : (c.lastMessageTime || existing.lastMessageTime),
+                messages: mergedMessages
+              });
             } else {
-              map.set(c.id, c);
+              const sortedMsgs = (c.messages || []).slice().sort((a, b) =>
+                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+              );
+              const lastMsg = sortedMsgs.length > 0 ? sortedMsgs[sortedMsgs.length - 1] : null;
+              map.set(c.id, {
+                ...c,
+                lastMessage: lastMsg ? (lastMsg.text || (lastMsg.media?.length ? 'ملف وسائط مرفق' : '')) : c.lastMessage,
+                lastMessageTime: lastMsg ? lastMsg.createdAt : c.lastMessageTime,
+                messages: sortedMsgs
+              });
             }
           });
           const result = Array.from(map.values());
@@ -695,9 +712,25 @@ export default function App() {
               const mergedMessages = Array.from(msgMap.values()).sort((a, b) =>
                 new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
               );
-              map.set(c.id, { ...existing, ...c, messages: mergedMessages });
+              const lastMsg = mergedMessages.length > 0 ? mergedMessages[mergedMessages.length - 1] : null;
+              map.set(c.id, {
+                ...existing,
+                ...c,
+                lastMessage: lastMsg ? (lastMsg.text || (lastMsg.media?.length ? 'ملف وسائط مرفق' : '')) : (c.lastMessage || existing.lastMessage),
+                lastMessageTime: lastMsg ? lastMsg.createdAt : (c.lastMessageTime || existing.lastMessageTime),
+                messages: mergedMessages
+              });
             } else {
-              map.set(c.id, c);
+              const sortedMsgs = (c.messages || []).slice().sort((a, b) =>
+                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+              );
+              const lastMsg = sortedMsgs.length > 0 ? sortedMsgs[sortedMsgs.length - 1] : null;
+              map.set(c.id, {
+                ...c,
+                lastMessage: lastMsg ? (lastMsg.text || (lastMsg.media?.length ? 'ملف وسائط مرفق' : '')) : c.lastMessage,
+                lastMessageTime: lastMsg ? lastMsg.createdAt : c.lastMessageTime,
+                messages: sortedMsgs
+              });
             }
           });
           const result = Array.from(map.values());
@@ -976,68 +1009,84 @@ export default function App() {
     }
   }, [activeTab]);
 
+  // Helper to accurately extract unread count for current user
+  const getConvUnread = useCallback((c: Conversation) => {
+    const myU = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
+    if (myU && c.unreadCountBy && typeof c.unreadCountBy[myU] === 'number') {
+      return c.unreadCountBy[myU];
+    }
+    return c.unreadCount || 0;
+  }, [currentUser.username]);
+
   // Derived counts with dynamic clearing when opened
   // Explicit requirement: The bottom tab badge displays the count of distinct PEOPLE (unique senders) who messaged me with unread messages
   const unreadSocialSendersCount = useMemo(() => {
     const senders = new Set<string>();
-    const myUsername = (currentUser.username || '').toLowerCase().trim();
+    const myUsername = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
     conversations.forEach(c => {
-      if (c.type === 'social' && (c.unreadCount || 0) > 0) {
-        let other = (c.participantUsername || '').toLowerCase().trim();
-        if (myUsername && other === myUsername && c.creatorUsername) {
-          other = c.creatorUsername.toLowerCase().trim();
+      if (c.type === 'social') {
+        const count = getConvUnread(c);
+        if (count > 0) {
+          let other = (c.participantUsername || '').toLowerCase().trim().replace(/^@/, '');
+          if (myUsername && other === myUsername && c.creatorUsername) {
+            other = c.creatorUsername.toLowerCase().trim().replace(/^@/, '');
+          }
+          senders.add(other || c.participantId || c.id);
         }
-        senders.add(other || c.participantId || c.id);
       }
     });
     return senders.size;
-  }, [conversations, currentUser.username]);
+  }, [conversations, currentUser.username, getConvUnread]);
 
   const unreadMarketSendersCount = useMemo(() => {
     const senders = new Set<string>();
-    const myUsername = (currentUser.username || '').toLowerCase().trim();
+    const myUsername = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
     conversations.forEach(c => {
-      if (c.type === 'market' && (c.unreadCount || 0) > 0) {
-        let other = (c.participantUsername || '').toLowerCase().trim();
-        if (myUsername && other === myUsername && c.creatorUsername) {
-          other = c.creatorUsername.toLowerCase().trim();
+      if (c.type === 'market') {
+        const count = getConvUnread(c);
+        if (count > 0) {
+          let other = (c.participantUsername || '').toLowerCase().trim().replace(/^@/, '');
+          if (myUsername && other === myUsername && c.creatorUsername) {
+            other = c.creatorUsername.toLowerCase().trim().replace(/^@/, '');
+          }
+          senders.add(other || c.participantId || c.id);
         }
-        senders.add(other || c.participantId || c.id);
       }
     });
     return senders.size;
-  }, [conversations, currentUser.username]);
+  }, [conversations, currentUser.username, getConvUnread]);
 
   const totalUnreadSendersCount = useMemo(() => {
     const senders = new Set<string>();
-    const myUsername = (currentUser.username || '').toLowerCase().trim();
+    const myUsername = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
     conversations.forEach(c => {
-      if ((c.unreadCount || 0) > 0) {
-        let other = (c.participantUsername || '').toLowerCase().trim();
+      const count = getConvUnread(c);
+      if (count > 0) {
+        let other = (c.participantUsername || '').toLowerCase().trim().replace(/^@/, '');
         if (myUsername && other === myUsername && c.creatorUsername) {
-          other = c.creatorUsername.toLowerCase().trim();
+          other = c.creatorUsername.toLowerCase().trim().replace(/^@/, '');
         }
         senders.add(other || c.participantId || c.id);
       }
     });
     return senders.size;
-  }, [conversations, currentUser.username]);
+  }, [conversations, currentUser.username, getConvUnread]);
 
   const unreadSocialMessagesCount = useMemo(() => {
     return conversations
       .filter(c => c.type === 'social')
-      .reduce((sum, c) => sum + (c.unreadCount || 0), 0);
-  }, [conversations]);
+      .reduce((sum, c) => sum + getConvUnread(c), 0);
+  }, [conversations, getConvUnread]);
 
   const unreadMarketMessagesCount = useMemo(() => {
     return conversations
       .filter(c => c.type === 'market')
-      .reduce((sum, c) => sum + (c.unreadCount || 0), 0);
-  }, [conversations]);
+      .reduce((sum, c) => sum + getConvUnread(c), 0);
+  }, [conversations, getConvUnread]);
 
   const totalUnreadMessagesCount = useMemo(() => {
-    return conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
-  }, [conversations]);
+    return conversations.reduce((sum, c) => sum + getConvUnread(c), 0);
+  }, [conversations, getConvUnread]);
 
   const unreadSendersCount = activeSection === 'market' ? unreadMarketSendersCount : unreadSocialSendersCount;
 
@@ -1066,11 +1115,9 @@ export default function App() {
   const handleMarkConversationRead = useCallback((convId: string) => {
     markRemoteConversationRead(convId, currentUser.username);
     setConversations(prev => {
-      const target = prev.find(c => c.id === convId);
-      if (!target || target.unreadCount === 0) return prev;
-      return prev.map(c => {
+      const userKey = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
+      const next = prev.map(c => {
         if (c.id === convId) {
-          const userKey = (currentUser.username || '').toLowerCase();
           const nextUnreadBy = { ...(c.unreadCountBy || {}) };
           if (userKey) {
             nextUnreadBy[userKey] = 0;
@@ -1079,59 +1126,89 @@ export default function App() {
         }
         return c;
       });
+      const key = getUserStorageKey('socialcart_conversations', currentUser.id);
+      localStorage.setItem(key, JSON.stringify(next));
+      return next;
     });
-  }, [currentUser.username]);
+  }, [currentUser.id, currentUser.username]);
 
   const handleMarkAllConversationsRead = useCallback((type?: 'social' | 'market') => {
     const targetType = type || activeSection;
+    const userKey = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
     setConversations(prev => {
-      const hasUnread = prev.some(c => c.type === targetType && c.unreadCount > 0);
-      if (!hasUnread) return prev;
-      return prev.map(c => c.type === targetType ? { ...c, unreadCount: 0 } : c);
+      const next = prev.map(c => {
+        if (c.type === targetType) {
+          markRemoteConversationRead(c.id, currentUser.username);
+          const nextUnreadBy = { ...(c.unreadCountBy || {}) };
+          if (userKey) {
+            nextUnreadBy[userKey] = 0;
+          }
+          return { ...c, unreadCount: 0, unreadCountBy: nextUnreadBy };
+        }
+        return c;
+      });
+      const key = getUserStorageKey('socialcart_conversations', currentUser.id);
+      localStorage.setItem(key, JSON.stringify(next));
+      return next;
     });
-  }, [activeSection]);
+  }, [activeSection, currentUser.id, currentUser.username]);
 
   // 1. Social Interactions Handlers
   const handleLikePost = async (postId: string) => {
-    let targetPost: Post | null = null;
     const currentUserId = currentUser.id;
+    const currentUsername = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
 
+    // Optimistic UI toggle
     setPosts(prev => prev.map(p => {
       if (p.id === postId) {
-        // Derive likedUserIds array safely
         const existingLikedUserIds: string[] = Array.isArray(p.likedUserIds)
           ? p.likedUserIds
           : (p.likedByMe ? [currentUserId] : []);
 
-        const isCurrentlyLikedByMe = existingLikedUserIds.includes(currentUserId) || (p.likedByMe && existingLikedUserIds.length === 0);
+        const isCurrentlyLiked = existingLikedUserIds.some(
+          id => id === currentUserId || id === currentUsername || id.toLowerCase() === currentUsername
+        );
 
         let newLikedUserIds: string[];
         let newLikesCount: number;
 
-        if (isCurrentlyLikedByMe) {
-          // Remove like for current user
-          newLikedUserIds = existingLikedUserIds.filter(id => id !== currentUserId);
+        if (isCurrentlyLiked) {
+          newLikedUserIds = existingLikedUserIds.filter(
+            id => id !== currentUserId && id !== currentUsername && id.toLowerCase() !== currentUsername
+          );
           newLikesCount = Math.max(0, (typeof p.likesCount === 'number' ? p.likesCount : existingLikedUserIds.length) - 1);
         } else {
-          // Add like for current user
           newLikedUserIds = Array.from(new Set([...existingLikedUserIds, currentUserId]));
           newLikesCount = Math.max(newLikedUserIds.length, (typeof p.likesCount === 'number' ? p.likesCount : 0) + 1);
         }
 
-        const updated: Post = {
+        return {
           ...p,
           likedUserIds: newLikedUserIds,
-          likedByMe: !isCurrentlyLikedByMe,
+          likedByMe: !isCurrentlyLiked,
           likesCount: newLikesCount
         };
-        targetPost = updated;
-        return updated;
       }
       return p;
     }));
 
-    if (targetPost) {
-      saveRemotePost(targetPost);
+    // Server atomic like toggle
+    const serverResult = await toggleRemotePostLike(postId, currentUserId, currentUsername);
+    if (serverResult) {
+      setPosts(prev => prev.map(p => {
+        if (p.id === postId) {
+          const isLiked = serverResult.likedUserIds.some(
+            id => id === currentUserId || id === currentUsername || id.toLowerCase() === currentUsername
+          );
+          return {
+            ...p,
+            likedUserIds: serverResult.likedUserIds,
+            likesCount: serverResult.likesCount,
+            likedByMe: isLiked
+          };
+        }
+        return p;
+      }));
     }
   };
 
@@ -1645,7 +1722,7 @@ export default function App() {
   const handleSendMessage = (conversationId: string, text: string, media?: MediaItem[]) => {
     const nowIso = new Date().toISOString();
     const newMsg: Message = {
-      id: `msg_${Date.now()}`,
+      id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       senderId: currentUser.id,
       senderUsername: currentUser.username,
       senderAvatar: currentUser.avatar,
@@ -1656,33 +1733,67 @@ export default function App() {
     };
 
     const targetConv = conversations.find(c => c.id === conversationId);
-    const otherUser = targetConv?.participantUsername?.toLowerCase() || '';
+    const myU = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
+    
+    // Accurately determine the other party in the conversation
+    let otherUser = '';
+    const p1 = (targetConv?.creatorUsername || '').toLowerCase().trim().replace(/^@/, '');
+    const p2 = (targetConv?.participantUsername || '').toLowerCase().trim().replace(/^@/, '');
+    if (p1 && p1 !== myU) {
+      otherUser = p1;
+    } else if (p2 && p2 !== myU) {
+      otherUser = p2;
+    } else if (Array.isArray(targetConv?.participants)) {
+      otherUser = targetConv.participants
+        .map(p => (p || '').toLowerCase().trim().replace(/^@/, ''))
+        .find(p => p && p !== myU) || '';
+    }
 
     const nextUnreadBy = { ...(targetConv?.unreadCountBy || {}) };
-    if (currentUser.username) {
-      nextUnreadBy[currentUser.username.toLowerCase()] = 0;
+    if (myU) {
+      nextUnreadBy[myU] = 0;
     }
     if (otherUser) {
       nextUnreadBy[otherUser] = (nextUnreadBy[otherUser] || 0) + 1;
     }
 
-    // Persist remote message to Firebase & Server API
-    sendRemoteMessage(conversationId, newMsg, nextUnreadBy);
+    const existingMessages = Array.isArray(targetConv?.messages) ? targetConv.messages : [];
+    const updatedMessages = [...existingMessages, newMsg].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+    const updatedConv: Conversation = {
+      ...(targetConv || {
+        id: conversationId,
+        userId: currentUser.id,
+        creatorId: currentUser.id,
+        creatorUsername: currentUser.username,
+        creatorDisplayName: currentUser.displayName,
+        creatorAvatar: currentUser.avatar,
+        participantId: `usr_${otherUser}`,
+        participantUsername: otherUser,
+        participantDisplayName: `@${otherUser}`,
+        participantAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+        participants: [myU, otherUser].filter(Boolean),
+        isVerified: true,
+        type: activeSection,
+        unreadCount: 0
+      }),
+      lastMessage: text || (media?.length ? 'ملف وسائط مرفق' : ''),
+      lastMessageTime: nowIso,
+      unreadCount: 0,
+      unreadCountBy: nextUnreadBy,
+      messages: updatedMessages
+    };
+
+    // Guaranteed remote delivery to Server API and Firebase
+    sendRemoteMessage(conversationId, newMsg, nextUnreadBy, updatedConv);
 
     setConversations(prev => {
-      const next = prev.map(c => {
-        if (c.id === conversationId) {
-          return {
-            ...c,
-            lastMessage: text || (media?.length ? 'ملف وسائط مرفق' : ''),
-            lastMessageTime: nowIso,
-            unreadCount: 0,
-            unreadCountBy: nextUnreadBy,
-            messages: [...c.messages, newMsg]
-          };
-        }
-        return c;
-      });
+      const exists = prev.some(c => c.id === conversationId);
+      const next = exists
+        ? prev.map(c => c.id === conversationId ? updatedConv : c)
+        : [updatedConv, ...prev];
       const userKey = getUserStorageKey('socialcart_conversations', currentUser.id);
       localStorage.setItem(userKey, JSON.stringify(next));
       return next;
@@ -1730,11 +1841,11 @@ export default function App() {
 
   const handleToggleConversationUnread = (conversationId: string) => {
     setConversations(prev => {
+      const userKey = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
       const next = prev.map(c => {
         if (c.id === conversationId) {
-          const currentUnread = c.unreadCount || 0;
+          const currentUnread = getConvUnread(c);
           const newUnread = currentUnread > 0 ? 0 : 1;
-          const userKey = (currentUser.username || '').toLowerCase();
           const nextUnreadBy = { ...(c.unreadCountBy || {}) };
           if (userKey) {
             nextUnreadBy[userKey] = newUnread;
@@ -1765,10 +1876,25 @@ export default function App() {
     setActiveSection(type);
 
     const cleanUsername = participantUsername.replace(/^@/, '').trim();
-    // Strictly find matching conversation of the EXACT same type
-    const existing = conversations.find(
-      c => c.participantUsername.toLowerCase() === cleanUsername.toLowerCase() && c.type === type
-    );
+    const myU = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
+    const targetU = cleanUsername.toLowerCase().trim();
+
+    // Canonical pairwise matching to prevent fragmented duplicate chats
+    const existing = conversations.find(c => {
+      if (c.type !== type) return false;
+      const cu1 = (c.creatorUsername || '').toLowerCase().trim().replace(/^@/, '');
+      const cu2 = (c.participantUsername || '').toLowerCase().trim().replace(/^@/, '');
+      const parts = Array.isArray(c.participants) 
+        ? c.participants.map(p => (p || '').toLowerCase().trim().replace(/^@/, '')) 
+        : [];
+      const isPair = (cu1 === targetU && cu2 === myU) || (cu1 === myU && cu2 === targetU) ||
+                     (parts.includes(targetU) && parts.includes(myU)) ||
+                     (cu1 === targetU || cu2 === targetU);
+      if (type === 'market' && productTitle) {
+        return isPair && c.relatedProductTitle === productTitle;
+      }
+      return isPair;
+    });
 
     if (existing) {
       if (initialMessage && initialMessage.trim()) {
@@ -1801,13 +1927,17 @@ export default function App() {
       participantUsername: cleanUsername,
       participantDisplayName,
       participantAvatar,
-      participants: Array.from(new Set([currentUser.username.toLowerCase(), cleanUsername.toLowerCase()])),
+      participants: Array.from(new Set([myU, targetU])),
       isVerified: true,
       type,
       relatedProductTitle: type === 'market' ? productTitle : undefined,
       lastMessage: trimmedMessage || (type === 'market' && productTitle ? `استفسار: ${productTitle}` : (type === 'market' ? 'استفسار جديد في المتجر' : 'محادثة اجتماعية جديدة')),
       lastMessageTime: nowIso,
       unreadCount: 0,
+      unreadCountBy: {
+        [myU]: 0,
+        ...(trimmedMessage ? { [targetU]: 1 } : {})
+      },
       messages: trimmedMessage
         ? [
             {
@@ -1850,25 +1980,25 @@ export default function App() {
     setActiveSection(targetType);
 
     const cleanUsername = username.replace(/^@/, '').trim();
+    const myU = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
+    const targetU = cleanUsername.toLowerCase().trim();
     
-    // Find conversation strictly matching targetType.
-    // NEVER allow a social chat action to redirect or match a marketplace store inquiry!
-    const existing = targetType === 'market'
-      ? (
-          conversations.find(
-            c => c.participantUsername.toLowerCase() === cleanUsername.toLowerCase() && 
-                 c.type === 'market' && 
-                 productTitle && c.relatedProductTitle === productTitle
-          ) ||
-          conversations.find(
-            c => c.participantUsername.toLowerCase() === cleanUsername.toLowerCase() && 
-                 c.type === 'market'
-          )
-        )
-      : conversations.find(
-          c => c.participantUsername.toLowerCase() === cleanUsername.toLowerCase() && 
-               c.type === 'social'
-        );
+    // Canonical pairwise matching to prevent fragmented duplicate chats
+    const existing = conversations.find(c => {
+      if (c.type !== targetType) return false;
+      const cu1 = (c.creatorUsername || '').toLowerCase().trim().replace(/^@/, '');
+      const cu2 = (c.participantUsername || '').toLowerCase().trim().replace(/^@/, '');
+      const parts = Array.isArray(c.participants) 
+        ? c.participants.map(p => (p || '').toLowerCase().trim().replace(/^@/, '')) 
+        : [];
+      const isPair = (cu1 === targetU && cu2 === myU) || (cu1 === myU && cu2 === targetU) ||
+                     (parts.includes(targetU) && parts.includes(myU)) ||
+                     (cu1 === targetU || cu2 === targetU);
+      if (targetType === 'market' && productTitle) {
+        return isPair && c.relatedProductTitle === productTitle;
+      }
+      return isPair;
+    });
 
     if (existing) {
       if (productTitle && existing.relatedProductTitle !== productTitle) {

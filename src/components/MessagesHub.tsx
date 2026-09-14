@@ -547,8 +547,32 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
               filteredConversations.map(conv => {
                 const partner = getConversationPartner(conv, currentUser);
                 const isActive = conv.id === activeConvId;
-                const hasUnread = (conv.unreadCount || 0) > 0;
-                const messageCount = conv.messages?.length || 0;
+
+                // 1. Calculate unread count specifically for current user
+                const myU = (currentUser?.username || '').toLowerCase().trim().replace(/^@/, '');
+                const userUnread = (myU && conv.unreadCountBy && typeof conv.unreadCountBy[myU] === 'number')
+                  ? conv.unreadCountBy[myU]
+                  : (conv.unreadCount || 0);
+                const hasUnread = userUnread > 0;
+
+                // 2. Sort messages to reliably identify the latest message
+                const sortedMsgs = Array.isArray(conv.messages) && conv.messages.length > 0
+                  ? conv.messages.slice().sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+                  : [];
+                const latestMsg = sortedMsgs.length > 0 ? sortedMsgs[sortedMsgs.length - 1] : null;
+
+                const isLastMsgFromMe = latestMsg 
+                  ? (latestMsg.senderId === currentUser?.id || 
+                     (latestMsg.senderUsername && myU && latestMsg.senderUsername.toLowerCase().trim().replace(/^@/, '') === myU) ||
+                     Boolean(latestMsg.isMe))
+                  : false;
+
+                const displayLastMessage = latestMsg
+                  ? (latestMsg.text || (latestMsg.media?.length ? 'ملف وسائط مرفق' : ''))
+                  : (conv.lastMessage || 'لا توجد رسائل');
+
+                const displayTime = latestMsg?.createdAt || conv.lastMessageTime;
+                const messageCount = sortedMsgs.length;
 
                 return (
                   <div
@@ -576,9 +600,9 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                           className={`absolute -top-1.5 -right-1.5 text-white text-[9px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center font-bold shadow-xs leading-none z-10 select-none ${
                             isMarket ? 'bg-emerald-500' : 'bg-indigo-600'
                           }`}
-                          title={`${conv.unreadCount} رسائل جديدة`}
+                          title={`${userUnread} رسائل جديدة`}
                         >
-                          {conv.unreadCount > 99 ? '+99' : conv.unreadCount}
+                          {userUnread > 99 ? '+99' : userUnread}
                         </span>
                       )}
                       {isMarket ? (
@@ -613,18 +637,19 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                             <span>{messageCount}</span>
                           </span>
 
+                          {/* Unread counter on the chat card - disappears on read */}
                           {hasUnread && (
                             <span 
-                              className={`text-white text-[9px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center font-bold shadow-xs leading-none ${
+                              className={`text-white text-[9px] min-w-[16px] h-4 px-1.5 rounded-full flex items-center justify-center font-bold shadow-xs leading-none select-none ${
                                 isMarket ? 'bg-emerald-500' : 'bg-indigo-600'
                               }`}
-                              title={`${conv.unreadCount} رسائل غير مقروءة`}
+                              title={`${userUnread} رسائل غير مقروءة`}
                             >
-                              {conv.unreadCount > 99 ? '+99' : conv.unreadCount}
+                              {userUnread > 99 ? '+99' : userUnread}
                             </span>
                           )}
                           <span className="text-[10px] text-slate-400">
-                            {formatConversationTime(conv.lastMessageTime)}
+                            {formatConversationTime(displayTime)}
                           </span>
                         </div>
                       </div>
@@ -645,21 +670,14 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                             ? 'text-slate-900 dark:text-slate-100 font-bold' 
                             : 'text-slate-500 dark:text-slate-400'
                         }`}>
-                          {conv.lastMessage}
-                        </p>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {/* Unread counter in the exact same place as mark as unread */}
-                          {hasUnread && (
-                            <span 
-                              className={`text-white text-[9px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center font-bold shadow-xs leading-none select-none ${
-                                isMarket ? 'bg-emerald-500' : 'bg-indigo-600'
-                              }`}
-                              title={`${conv.unreadCount} رسائل غير مقروءة`}
-                            >
-                              {conv.unreadCount > 99 ? '+99' : conv.unreadCount}
+                          {latestMsg && (
+                            <span className={isLastMsgFromMe ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-700 dark:text-slate-300 font-semibold'}>
+                              {isLastMsgFromMe ? 'أنت: ' : ''}
                             </span>
                           )}
-
+                          {displayLastMessage}
+                        </p>
+                        <div className="flex items-center gap-1 shrink-0">
                           {/* Toggle unread status button */}
                           {onToggleUnread && (
                             <button
@@ -691,7 +709,7 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                               e.stopPropagation();
                               setChatToDelete({
                                 id: conv.id,
-                                name: conv.participantDisplayName
+                                name: partner.displayName
                               });
                             }}
                             className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition opacity-80 hover:opacity-100"
@@ -840,26 +858,34 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                 onScroll={handleContainerScroll} 
                 className="relative flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50/30 dark:bg-slate-950/30"
               >
-                {activeConversation.messages.length === 0 ? (
-                  <div className="h-full min-h-[260px] flex flex-col items-center justify-center text-center p-6 my-auto text-slate-400">
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-3 ${
-                      isMarket 
-                        ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400' 
-                        : 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400'
-                    }`}>
-                      {isMarket ? <Store className="w-6 h-6" /> : <MessageSquare className="w-6 h-6" />}
-                    </div>
-                    <h4 className="font-bold text-slate-800 dark:text-slate-200 text-xs sm:text-sm mb-1">
-                      {isMarket ? 'بدء استفسار جديد بخصوص المنتج' : 'بدء محادثة مباشرة جديدة'}
-                    </h4>
-                    <p className="text-[11px] text-slate-500 max-w-xs">
-                      {isMarket 
-                        ? `لا توجد رسائل سابقة. يمكنك كتابة استفسارك للبائع "${activePartner.displayName}" بالأسفل وإرساله مباشرة.` 
-                        : `لا توجد رسائل سابقة. ابدأ المحادثة بكتابة رسالتك في الصندوق بالأسفل.`}
-                    </p>
-                  </div>
-                ) : (
-                  activeConversation.messages.map(msg => {
+                {(() => {
+                  const sortedChatMessages = (activeConversation.messages || [])
+                    .slice()
+                    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+                  if (sortedChatMessages.length === 0) {
+                    return (
+                      <div className="h-full min-h-[260px] flex flex-col items-center justify-center text-center p-6 my-auto text-slate-400">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-3 ${
+                          isMarket 
+                            ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400' 
+                            : 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400'
+                        }`}>
+                          {isMarket ? <Store className="w-6 h-6" /> : <MessageSquare className="w-6 h-6" />}
+                        </div>
+                        <h4 className="font-bold text-slate-800 dark:text-slate-200 text-xs sm:text-sm mb-1">
+                          {isMarket ? 'بدء استفسار جديد بخصوص المنتج' : 'بدء محادثة مباشرة جديدة'}
+                        </h4>
+                        <p className="text-[11px] text-slate-500 max-w-xs">
+                          {isMarket 
+                            ? `لا توجد رسائل سابقة. يمكنك كتابة استفسارك للبائع "${activePartner.displayName}" بالأسفل وإرساله مباشرة.` 
+                            : `لا توجد رسائل سابقة. ابدأ المحادثة بكتابة رسالتك في الصندوق بالأسفل.`}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return sortedChatMessages.map(msg => {
                     const cleanCurUser = (currentUser?.username || '').replace(/^@/, '').toLowerCase().trim();
                     const cleanCurId = (currentUser?.id || '').trim();
                     const senderU = (msg.senderUsername || '').replace(/^@/, '').toLowerCase().trim();
@@ -972,8 +998,8 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                         </div>
                       </div>
                     );
-                  })
-                )}
+                  });
+                })()}
                 {/* Floating button to jump to bottom when user scrolled up and new messages arrive */}
                 {showScrollBottomBtn && (
                   <button
