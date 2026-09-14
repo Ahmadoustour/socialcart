@@ -108,6 +108,30 @@ export async function saveRemotePost(post: Post): Promise<void> {
   }
 }
 
+export async function toggleRemotePostLike(
+  postId: string,
+  userId: string,
+  username: string
+): Promise<{ likedUserIds: string[]; likesCount: number } | null> {
+  try {
+    const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/like`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, username })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        likedUserIds: Array.isArray(data.likedUserIds) ? data.likedUserIds : [],
+        likesCount: typeof data.likesCount === 'number' ? data.likesCount : 0
+      };
+    }
+  } catch (err) {
+    console.warn('Notice: Server toggle post like:', err);
+  }
+  return null;
+}
+
 export async function deleteRemotePost(postId: string): Promise<void> {
   if (isFirebaseReady()) {
     try {
@@ -431,6 +455,10 @@ export async function sendRemoteMessage(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, unreadCountBy })
     });
+    // Trigger immediate local sync across active tabs and components
+    try {
+      window.dispatchEvent(new CustomEvent('socialcart_conversation_updated', { detail: { convId } }));
+    } catch {}
   } catch (err) {
     console.warn('Notice: Server send message:', err);
   }
@@ -518,8 +546,7 @@ export function subscribeToRemoteConversations(
     }
   }
 
-  // Polling server every 4 seconds to sync messages between browsers
-  const pollInterval = setInterval(() => {
+  const fetchLatest = () => {
     fetch(`/api/conversations?userId=${encodeURIComponent(userId)}&username=${encodeURIComponent(cleanUser)}`)
       .then(res => res.ok ? res.json() : [])
       .then((serverConvs: Conversation[]) => {
@@ -528,11 +555,21 @@ export function subscribeToRemoteConversations(
         }
       })
       .catch(() => {});
-  }, 4000);
+  };
+
+  // Ultra-fast polling every 1200ms to eliminate messaging latency
+  const pollInterval = setInterval(fetchLatest, 1200);
+
+  // Instant response to local message events
+  const handleLocalUpdate = () => {
+    fetchLatest();
+  };
+  window.addEventListener('socialcart_conversation_updated', handleLocalUpdate);
 
   return () => {
     if (unsubFirestore) unsubFirestore();
     clearInterval(pollInterval);
+    window.removeEventListener('socialcart_conversation_updated', handleLocalUpdate);
   };
 }
 

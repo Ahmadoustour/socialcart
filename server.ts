@@ -925,6 +925,64 @@ app.post("/api/posts", (req, res) => {
   }
 });
 
+// Atomic like/unlike endpoint to prevent race conditions and cross-account like overwrites
+app.post("/api/posts/:id/like", (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId, username } = req.body || {};
+    if (!userId && !username) {
+      return res.status(400).json({ error: "userId or username required" });
+    }
+    const posts = readJsonFile<any[]>(POSTS_FILE, []);
+    const postIndex = posts.findIndex(p => p.id === id);
+    if (postIndex < 0) {
+      return res.status(404).json({ error: "Post not found" });
+    }
+    const post = posts[postIndex];
+    let likedUserIds: string[] = Array.isArray(post.likedUserIds) ? [...post.likedUserIds] : [];
+    
+    const cleanU = (username || "").replace(/^@/, "").toLowerCase().trim();
+    const cleanId = (userId || "").trim();
+
+    const isAlreadyLiked = likedUserIds.some(uid => {
+      const uLower = (uid || "").toLowerCase().trim();
+      return (cleanId && uLower === cleanId.toLowerCase()) || (cleanU && uLower === cleanU);
+    });
+
+    if (isAlreadyLiked) {
+      // Remove like for this user
+      likedUserIds = likedUserIds.filter(uid => {
+        const uLower = (uid || "").toLowerCase().trim();
+        const matchesId = cleanId ? uLower === cleanId.toLowerCase() : false;
+        const matchesUser = cleanU ? uLower === cleanU : false;
+        return !matchesId && !matchesUser;
+      });
+    } else {
+      // Add like using primary identifier
+      const targetIdentifier = cleanId || cleanU;
+      if (!likedUserIds.includes(targetIdentifier)) {
+        likedUserIds.push(targetIdentifier);
+      }
+    }
+
+    const updatedPost = {
+      ...post,
+      likedUserIds,
+      likesCount: likedUserIds.length
+    };
+    posts[postIndex] = updatedPost;
+    writeJsonFile(POSTS_FILE, posts);
+    res.json({
+      success: true,
+      id: updatedPost.id,
+      likedUserIds: updatedPost.likedUserIds,
+      likesCount: updatedPost.likesCount
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to toggle post like" });
+  }
+});
+
 app.delete("/api/posts/:id", (req, res) => {
   try {
     const { id } = req.params;

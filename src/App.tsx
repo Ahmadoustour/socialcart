@@ -977,39 +977,51 @@ export default function App() {
   }, [activeTab]);
 
   // Derived counts with dynamic clearing when opened
-  // Explicit requirement: The bottom tab badge displays the count of distinct PEOPLE (unique conversations) who messaged me with unread messages
+  // Explicit requirement: The bottom tab badge displays the count of distinct PEOPLE (unique senders) who messaged me with unread messages
   const unreadSocialSendersCount = useMemo(() => {
     const senders = new Set<string>();
+    const myUsername = (currentUser.username || '').toLowerCase().trim();
     conversations.forEach(c => {
       if (c.type === 'social' && (c.unreadCount || 0) > 0) {
-        const id = (c.participantUsername || c.participantId || c.id).toLowerCase().trim();
-        senders.add(id);
+        let other = (c.participantUsername || '').toLowerCase().trim();
+        if (myUsername && other === myUsername && c.creatorUsername) {
+          other = c.creatorUsername.toLowerCase().trim();
+        }
+        senders.add(other || c.participantId || c.id);
       }
     });
     return senders.size;
-  }, [conversations]);
+  }, [conversations, currentUser.username]);
 
   const unreadMarketSendersCount = useMemo(() => {
     const senders = new Set<string>();
+    const myUsername = (currentUser.username || '').toLowerCase().trim();
     conversations.forEach(c => {
       if (c.type === 'market' && (c.unreadCount || 0) > 0) {
-        const id = (c.participantUsername || c.participantId || c.id).toLowerCase().trim();
-        senders.add(id);
+        let other = (c.participantUsername || '').toLowerCase().trim();
+        if (myUsername && other === myUsername && c.creatorUsername) {
+          other = c.creatorUsername.toLowerCase().trim();
+        }
+        senders.add(other || c.participantId || c.id);
       }
     });
     return senders.size;
-  }, [conversations]);
+  }, [conversations, currentUser.username]);
 
   const totalUnreadSendersCount = useMemo(() => {
     const senders = new Set<string>();
+    const myUsername = (currentUser.username || '').toLowerCase().trim();
     conversations.forEach(c => {
       if ((c.unreadCount || 0) > 0) {
-        const id = (c.participantUsername || c.participantId || c.id).toLowerCase().trim();
-        senders.add(id);
+        let other = (c.participantUsername || '').toLowerCase().trim();
+        if (myUsername && other === myUsername && c.creatorUsername) {
+          other = c.creatorUsername.toLowerCase().trim();
+        }
+        senders.add(other || c.participantId || c.id);
       }
     });
     return senders.size;
-  }, [conversations]);
+  }, [conversations, currentUser.username]);
 
   const unreadSocialMessagesCount = useMemo(() => {
     return conversations
@@ -2326,8 +2338,8 @@ export default function App() {
         onSelectTab={handleSelectTab}
         onSwitchSection={handleSwitchSection}
         cartBadgeCount={cartBadgeCount}
-        unreadMessagesCount={unreadSocialMessagesCount}
-        unreadMarketMessagesCount={unreadMarketMessagesCount}
+        unreadMessagesCount={unreadSocialSendersCount}
+        unreadMarketMessagesCount={unreadMarketSendersCount}
         onOpenCreateModal={() => {
           if (!isLoggedIn) {
             setIsAuthModalOpen(true);

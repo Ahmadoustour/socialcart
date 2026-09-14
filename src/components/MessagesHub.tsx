@@ -12,6 +12,7 @@ import {
   PackageCheck,
   Sparkles,
   ArrowRight,
+  ArrowDown,
   Play,
   Maximize2,
   Trash2,
@@ -21,6 +22,50 @@ import { Conversation, User, MediaItem } from '../types';
 import { scanUrlOrFile } from '../utils/security';
 import { formatMessageTime, formatConversationTime } from '../utils/dateUtils';
 import { MediaLightboxModal } from './MediaLightboxModal';
+
+// Helper to determine the OTHER participant in a conversation relative to the active user
+export function getConversationPartner(conv: Conversation, currentUser?: User) {
+  const cleanCurrent = (currentUser?.username || '').replace(/^@/, '').toLowerCase().trim();
+  const cleanCurrentId = (currentUser?.id || '').trim();
+
+  const isCreatorMe = Boolean(
+    (cleanCurrentId && conv.creatorId && conv.creatorId === cleanCurrentId) ||
+    (cleanCurrent && conv.creatorUsername && conv.creatorUsername.replace(/^@/, '').toLowerCase().trim() === cleanCurrent)
+  );
+
+  const isParticipantMe = Boolean(
+    (cleanCurrentId && conv.participantId && conv.participantId === cleanCurrentId) ||
+    (cleanCurrent && conv.participantUsername && conv.participantUsername.replace(/^@/, '').toLowerCase().trim() === cleanCurrent)
+  );
+
+  if (isCreatorMe && !isParticipantMe) {
+    return {
+      username: conv.participantUsername,
+      displayName: conv.participantDisplayName,
+      avatar: conv.participantAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+      id: conv.participantId,
+      isVerified: conv.isVerified
+    };
+  }
+
+  if (isParticipantMe && !isCreatorMe) {
+    return {
+      username: conv.creatorUsername || conv.participantUsername,
+      displayName: conv.creatorDisplayName || conv.participantDisplayName,
+      avatar: conv.creatorAvatar || conv.participantAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+      id: conv.creatorId || conv.participantId,
+      isVerified: conv.isVerified
+    };
+  }
+
+  return {
+    username: conv.participantUsername,
+    displayName: conv.participantDisplayName,
+    avatar: conv.participantAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+    id: conv.participantId,
+    isVerified: conv.isVerified
+  };
+}
 
 interface MessagesHubProps {
   conversations: Conversation[];
@@ -79,7 +124,36 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
   // Media attachment state in chat
   const [attachedMedia, setAttachedMedia] = useState<MediaItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Controlled chat scrolling - NEVER force scroll whole page or yank user down when reading history
+  const chatScrollContainerRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef<boolean>(true);
+  const prevActiveConvIdRef = useRef<string>('');
+  const prevMessagesLengthRef = useRef<number>(0);
+  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState<boolean>(false);
+
+  const handleContainerScroll = () => {
+    const el = chatScrollContainerRef.current;
+    if (!el) return;
+    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const nearBottom = distanceToBottom <= 120;
+    isNearBottomRef.current = nearBottom;
+    if (nearBottom) {
+      setShowScrollBottomBtn(false);
+    }
+  };
+
+  const scrollToBottom = (smooth = false) => {
+    const el = chatScrollContainerRef.current;
+    if (!el) return;
+    if (smooth) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
+    setShowScrollBottomBtn(false);
+    isNearBottomRef.current = true;
+  };
 
   // Fullscreen Media Lightbox Viewer Modal for chat images & videos
   const [lightboxState, setLightboxState] = useState<{
@@ -146,10 +220,56 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
     }
   }, [mode, initialActiveConvId, modeConversations]);
 
-  // Scroll to bottom whenever messages or active conversation changes
+  // Controlled scroll effect: only scroll within the message container, NEVER the whole page!
+  const activeConversation = modeConversations.find(c => c.id === activeConvId);
+  const currentMessagesCount = activeConversation?.messages?.length || 0;
+
+  // 1. When switching conversation: jump to bottom once
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeConvId, conversations]);
+    if (!activeConvId) return;
+    if (activeConvId !== prevActiveConvIdRef.current) {
+      prevActiveConvIdRef.current = activeConvId;
+      prevMessagesLengthRef.current = currentMessagesCount;
+      isNearBottomRef.current = true;
+      setShowScrollBottomBtn(false);
+      setTimeout(() => {
+        scrollToBottom(false);
+      }, 40);
+    }
+  }, [activeConvId, currentMessagesCount]);
+
+  // 2. When new messages arrive in the active conversation
+  useEffect(() => {
+    if (!activeConvId || !activeConversation) return;
+
+    if (currentMessagesCount > prevMessagesLengthRef.current) {
+      const lastMsg = activeConversation.messages[activeConversation.messages.length - 1];
+      const cleanCurUser = (currentUser?.username || '').replace(/^@/, '').toLowerCase().trim();
+      const cleanCurId = (currentUser?.id || '').trim();
+      const senderU = (lastMsg?.senderUsername || '').replace(/^@/, '').toLowerCase().trim();
+      const senderId = (lastMsg?.senderId || '').trim();
+
+      const isMyMsg = Boolean(
+        (cleanCurId && senderId && cleanCurId === senderId) ||
+        (cleanCurUser && senderU && cleanCurUser === senderU) ||
+        (lastMsg?.isMe)
+      );
+
+      if (isMyMsg) {
+        // User sent a message -> scroll to bottom
+        setTimeout(() => scrollToBottom(true), 30);
+      } else {
+        // Incoming message: ONLY auto-scroll if user is already at the bottom
+        if (isNearBottomRef.current) {
+          setTimeout(() => scrollToBottom(true), 30);
+        } else {
+          // Keep user at current scroll position so they can read comfortably
+          setShowScrollBottomBtn(true);
+        }
+      }
+    }
+    prevMessagesLengthRef.current = currentMessagesCount;
+  }, [currentMessagesCount, activeConvId]);
 
   // Mark active conversation as read when selected
   const onMarkReadRef = useRef(onMarkConversationRead);
@@ -164,15 +284,13 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
   }, [activeConvId]);
 
   const filteredConversations = modeConversations.filter(c => {
-    const matchSearch = c.participantDisplayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        c.participantUsername.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    const partner = getConversationPartner(c, currentUser);
+    const matchSearch = partner.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        partner.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         c.lastMessage.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         (c.relatedProductTitle && c.relatedProductTitle.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchSearch;
   });
-
-  // CRITICAL: activeConversation is strictly found ONLY in modeConversations!
-  const activeConversation = modeConversations.find(c => c.id === activeConvId);
 
   const handleSelectConversation = (convId: string) => {
     if (!modeConversations.some(c => c.id === convId)) return;
@@ -427,8 +545,10 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
               </div>
             ) : (
               filteredConversations.map(conv => {
+                const partner = getConversationPartner(conv, currentUser);
                 const isActive = conv.id === activeConvId;
                 const hasUnread = (conv.unreadCount || 0) > 0;
+                const messageCount = conv.messages?.length || 0;
 
                 return (
                   <div
@@ -447,8 +567,8 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                     {/* Avatar */}
                     <div className="relative shrink-0">
                       <img
-                        src={conv.participantAvatar}
-                        alt={conv.participantDisplayName}
+                        src={partner.avatar}
+                        alt={partner.displayName}
                         className="w-11 h-11 rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700"
                       />
                       {hasUnread && (
@@ -477,13 +597,22 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1 min-w-0">
                           <span className={`text-xs truncate ${hasUnread ? 'font-black text-slate-900 dark:text-white' : 'font-bold text-slate-800 dark:text-slate-200'}`}>
-                            {conv.participantDisplayName}
+                            {partner.displayName}
                           </span>
-                          {conv.isVerified && (
+                          {partner.isVerified && (
                             <BadgeCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                           )}
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
+                          {/* Message count badge on each chat */}
+                          <span 
+                            className="text-[10px] text-slate-400 dark:text-slate-500 font-medium px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80 shrink-0 flex items-center gap-1"
+                            title={`إجمالي عدد الرسائل: ${messageCount}`}
+                          >
+                            <MessageSquare className="w-2.5 h-2.5" />
+                            <span>{messageCount}</span>
+                          </span>
+
                           {hasUnread && (
                             <span 
                               className={`text-white text-[9px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center font-bold shadow-xs leading-none ${
@@ -585,6 +714,9 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
           showMobileChat ? 'flex' : 'hidden lg:flex'
         }`}>
           {activeConversation ? (
+            (() => {
+              const activePartner = getConversationPartner(activeConversation, currentUser);
+              return (
             <>
               {/* Chat Thread Header */}
               <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/60">
@@ -601,20 +733,20 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                   </button>
 
                   <img
-                    src={activeConversation.participantAvatar}
-                    alt={activeConversation.participantDisplayName}
+                    src={activePartner.avatar}
+                    alt={activePartner.displayName}
                     className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700 shrink-0"
                   />
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 truncate">
                       <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate">
-                        {activeConversation.participantDisplayName}
+                        {activePartner.displayName}
                       </span>
-                      {activeConversation.isVerified && (
+                      {activePartner.isVerified && (
                         <BadgeCheck className="w-4 h-4 text-emerald-500 shrink-0" />
                       )}
                       <span className="text-[11px] text-slate-400 font-normal hidden sm:inline">
-                        (@{activeConversation.participantUsername})
+                        (@{activePartner.username})
                       </span>
                     </div>
 
@@ -702,8 +834,12 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                 </div>
               )}
 
-              {/* Messages Bubbles Area */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50/30 dark:bg-slate-950/30">
+              {/* Messages Bubbles Area with controlled container scrolling */}
+              <div 
+                ref={chatScrollContainerRef} 
+                onScroll={handleContainerScroll} 
+                className="relative flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50/30 dark:bg-slate-950/30"
+              >
                 {activeConversation.messages.length === 0 ? (
                   <div className="h-full min-h-[260px] flex flex-col items-center justify-center text-center p-6 my-auto text-slate-400">
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-3 ${
@@ -718,25 +854,32 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                     </h4>
                     <p className="text-[11px] text-slate-500 max-w-xs">
                       {isMarket 
-                        ? `لا توجد رسائل سابقة. يمكنك كتابة استفسارك للبائع "${activeConversation.participantDisplayName}" بالأسفل وإرساله مباشرة.` 
+                        ? `لا توجد رسائل سابقة. يمكنك كتابة استفسارك للبائع "${activePartner.displayName}" بالأسفل وإرساله مباشرة.` 
                         : `لا توجد رسائل سابقة. ابدأ المحادثة بكتابة رسالتك في الصندوق بالأسفل.`}
                     </p>
                   </div>
                 ) : (
                   activeConversation.messages.map(msg => {
-                    // Accurately and dynamically check if this message is from the currently logged in user
-                    const isMsgMe = (currentUser && (
-                      (msg.senderId && currentUser.id && msg.senderId === currentUser.id) ||
-                      (msg.senderUsername && currentUser.username && msg.senderUsername.toLowerCase() === currentUser.username.toLowerCase())
-                    )) ?? msg.isMe;
+                    const cleanCurUser = (currentUser?.username || '').replace(/^@/, '').toLowerCase().trim();
+                    const cleanCurId = (currentUser?.id || '').trim();
+                    const senderU = (msg.senderUsername || '').replace(/^@/, '').toLowerCase().trim();
+                    const senderId = (msg.senderId || '').trim();
 
+                    // SENDER DETERMINATION: strictly verify if this message belongs to currently logged in user
+                    const isMsgMe = Boolean(
+                      (cleanCurId && senderId && cleanCurId === senderId) ||
+                      (cleanCurUser && senderU && cleanCurUser === senderU) ||
+                      (Boolean(msg.isMe) && (!senderU || senderU === cleanCurUser))
+                    );
+
+                    // AVATAR: If I sent it, ALWAYS show my avatar. If the other person sent it, show their avatar!
                     const bubbleAvatar = isMsgMe 
-                      ? currentUser.avatar 
-                      : (msg.senderAvatar || activeConversation.participantAvatar);
+                      ? (currentUser?.avatar || msg.senderAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80')
+                      : (msg.senderAvatar || activePartner.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80');
 
                     const bubbleUsername = isMsgMe 
-                      ? currentUser.username 
-                      : (msg.senderUsername || activeConversation.participantUsername);
+                      ? (currentUser?.displayName || currentUser?.username || 'أنا')
+                      : (msg.senderUsername || activePartner.displayName || activePartner.username);
 
                     return (
                       <div
@@ -831,7 +974,19 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                     );
                   })
                 )}
-                <div ref={messagesEndRef} />
+                {/* Floating button to jump to bottom when user scrolled up and new messages arrive */}
+                {showScrollBottomBtn && (
+                  <button
+                    type="button"
+                    onClick={() => scrollToBottom(true)}
+                    className={`sticky bottom-2 mx-auto left-0 right-0 w-fit text-white text-[11px] font-bold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 z-20 transition ${
+                      isMarket ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'
+                    }`}
+                  >
+                    <span>رسائل جديدة بالأسفل</span>
+                    <ArrowDown className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
               {/* Attached preview before sending */}
@@ -905,6 +1060,8 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                 </button>
               </div>
             </>
+              );
+            })()
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-6">
               {isMarket ? (
