@@ -41,8 +41,8 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
 }) => {
   const marketUnread = unreadMarketMessagesCount !== undefined ? unreadMarketMessagesCount : unreadMessagesCount;
   return (
-    <div className="fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.3)] transition-colors duration-200">
-      <div className="max-w-xl mx-auto px-2 sm:px-4">
+    <div className="md:hidden fixed bottom-0 inset-x-0 w-full z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.3)] transition-colors duration-200 pb-[env(safe-area-inset-bottom,0px)] select-none">
+      <div className="max-w-xl mx-auto px-1 sm:px-4 w-full">
         
         {/* ========================================================================= */}
         {/* CASE 1: SOCIAL BUTTONS (أزرار قسم المجتمع المخصصة فقط عند تفعيل المجتمع) */}

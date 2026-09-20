@@ -16,7 +16,9 @@ import {
   Search,
   X,
   Hash,
-  Filter
+  Filter,
+  TrendingUp,
+  ShieldCheck
 } from 'lucide-react';
 import { Post, User, MediaItem } from '../types';
 import { MediaLightboxModal } from './MediaLightboxModal';
@@ -142,43 +144,47 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 pb-12 animate-fadeIn">
-      {/* Quick Share Box */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm">
-        <div className="flex items-center gap-3">
+    <div className="w-full max-w-7xl mx-auto pb-12 animate-fadeIn overflow-x-hidden">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        {/* Main Feed Column (Full width on mobile/tablet, 8-cols on desktop) */}
+        <div className="w-full lg:col-span-8 space-y-4 sm:space-y-6">
+          {/* Quick Share Box */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-sm">
+        <div className="flex items-center gap-2.5 sm:gap-3">
           <img
             src={currentUser.avatar}
             alt={currentUser.displayName}
-            className="w-10 h-10 rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700 shrink-0"
           />
           <button
             onClick={onOpenCreatePost}
-            className="flex-1 text-right bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 dark:text-slate-500 px-4 py-2.5 rounded-xl text-xs font-medium border border-slate-200/70 dark:border-slate-700/70 transition"
+            className="flex-1 text-right bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 dark:text-slate-500 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs font-medium border border-slate-200/70 dark:border-slate-700/70 transition truncate min-w-0"
           >
             ماذا يدور في ذهنك اليوم يا {currentUser.displayName.split(' ')[0]}؟ شارك منشوراً، صوراً أو فيديو...
           </button>
         </div>
 
-        <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               onClick={onOpenCreatePost}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 font-bold transition"
+              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 font-bold transition text-[11px] sm:text-xs"
             >
-              <ImageIcon className="w-4 h-4" />
-              صور وفيديو
+              <ImageIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span>صور وفيديو</span>
             </button>
             <button
               onClick={onOpenCreatePost}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 font-bold transition"
+              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 font-bold transition text-[11px] sm:text-xs"
             >
-              <Video className="w-4 h-4" />
-              فيديو توضيحي
+              <Video className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span>فيديو توضيحي</span>
             </button>
           </div>
           <button
             onClick={onOpenCreatePost}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-1.5 rounded-xl text-xs shadow-sm transition"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3.5 sm:px-4 py-1.5 rounded-xl text-xs shadow-sm transition shrink-0"
           >
             نشر الآن
           </button>
@@ -186,7 +192,7 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
       </div>
 
       {/* Search & Tag Filter Bar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-sm space-y-2.5 sm:space-y-3">
         <div className="relative">
           <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
@@ -194,7 +200,7 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="ابحث في المنشورات، الكلمات المفتاحية، الوسوم #، أو أسماء الناشرين..."
-            className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 rounded-xl pr-10 pl-10 py-2.5 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition"
+            className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 rounded-xl pr-10 pl-10 py-2 sm:py-2.5 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition"
           />
           {searchQuery && (
             <button
@@ -208,7 +214,7 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
         </div>
 
         {/* Quick Hashtags / Tags Bar */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs -mx-1 px-1 scrollbar-none">
           <div className="flex items-center gap-1 text-slate-400 dark:text-slate-500 shrink-0 text-[11px] font-medium pl-1">
             <Filter className="w-3 h-3" />
             <span>الوسوم:</span>
@@ -309,16 +315,16 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
               className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition hover:shadow-md"
             >
               {/* Header: Author Info */}
-              <div className="p-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
+              <div className="p-3 sm:p-4 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                   <img
                     src={post.author?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'}
                     alt={post.author?.displayName || 'مستخدم'}
-                    className="w-11 h-11 rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700"
+                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700 shrink-0"
                   />
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-sm text-slate-900 dark:text-white">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate">
                         {post.author?.displayName || 'مستخدم'}
                       </span>
                       {post.author?.isVerified && (
@@ -510,16 +516,16 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
               </div>
 
               {/* Buttons Bar */}
-              <div className="px-4 py-2 border-t border-slate-100 dark:border-slate-800 grid grid-cols-3 gap-2">
+              <div className="px-2 sm:px-4 py-2 border-t border-slate-100 dark:border-slate-800 grid grid-cols-3 gap-1 sm:gap-2">
                 <button
                   onClick={() => onLikePost(post.id)}
-                  className={`py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+                  className={`py-2 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 sm:gap-1.5 transition ${
                     isLiked
                       ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'
                       : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'
                   }`}
                 >
-                  <Heart className={`w-4 h-4 ${isLiked ? 'fill-rose-500 text-rose-500' : ''}`} />
+                  <Heart className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isLiked ? 'fill-rose-500 text-rose-500' : ''}`} />
                   <span>{isLiked ? 'معجب' : 'أعجبني'}</span>
                 </button>
 
@@ -528,15 +534,15 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
                     const el = document.getElementById(`comment-input-${post.id}`);
                     el?.focus();
                   }}
-                  className="py-2 rounded-xl text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center gap-1.5 transition"
+                  className="py-2 rounded-xl text-[11px] sm:text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center gap-1 sm:gap-1.5 transition"
                 >
-                  <MessageCircle className="w-4 h-4" />
+                  <MessageCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   <span>تعليق</span>
                 </button>
 
                 <button
                   onClick={() => handleShare(post)}
-                  className="py-2 rounded-xl text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center gap-1.5 transition"
+                  className="py-2 rounded-xl text-[11px] sm:text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center gap-1 sm:gap-1.5 transition"
                 >
                   {copiedPostId === post.id ? (
                     <>
@@ -644,6 +650,122 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
           );
         })
       )}
+          </div>
+        </div>
+
+        {/* Desktop Sidebar (Only visible on lg: and above screens) */}
+        <aside className="hidden lg:flex lg:col-span-4 flex-col gap-5 sticky top-20">
+          {/* User Mini Profile Card */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
+            <div className="flex items-center gap-3.5 mb-4">
+              <img
+                src={currentUser.avatar}
+                alt={currentUser.displayName}
+                className="w-14 h-14 rounded-2xl object-cover ring-2 ring-indigo-500/20 shadow-xs shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
+                    {currentUser.displayName}
+                  </h3>
+                  {currentUser.isVerifiedSeller && (
+                    <BadgeCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+                  )}
+                </div>
+                <p className="text-xs text-slate-400 truncate">@{currentUser.username}</p>
+                <div className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>متصل الآن</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 py-3 border-y border-slate-100 dark:border-slate-800 text-center mb-4">
+              <div>
+                <span className="block text-xs font-black text-slate-900 dark:text-white">
+                  {currentUser.trustScore ?? 98}%
+                </span>
+                <span className="text-[10px] text-slate-400">معدل الثقة</span>
+              </div>
+              <div>
+                <span className="block text-xs font-black text-slate-900 dark:text-white">
+                  {posts.filter(p => p.author?.id === currentUser.id || p.userId === currentUser.id).length}
+                </span>
+                <span className="text-[10px] text-slate-400">المنشورات</span>
+              </div>
+              <div>
+                <span className="block text-xs font-black text-slate-900 dark:text-white">
+                  {currentUser.isVerifiedSeller ? 'بائع موثق' : 'عضو نشط'}
+                </span>
+                <span className="text-[10px] text-slate-400">الحالة</span>
+              </div>
+            </div>
+
+            <button
+              onClick={onOpenCreatePost}
+              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs shadow-indigo-600/20 transition flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>مشاركة منشور في المجتمع</span>
+            </button>
+          </div>
+
+          {/* Trending Topics & Hashtags Widget */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <h4 className="font-extrabold text-xs text-slate-900 dark:text-white">الوسوم الرائجة</h4>
+              </div>
+              {selectedTag && (
+                <button
+                  onClick={() => setSelectedTag(null)}
+                  className="text-[11px] text-indigo-600 hover:underline font-bold cursor-pointer"
+                >
+                  إلغاء التحديد
+                </button>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              {availableTags.slice(0, 6).map(tag => {
+                const isSelected = selectedTag?.toLowerCase() === tag.toLowerCase();
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => setSelectedTag(isSelected ? null : tag)}
+                    className={`w-full flex items-center justify-between p-2 rounded-xl text-xs transition text-right cursor-pointer ${
+                      isSelected
+                        ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold'
+                        : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Hash className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>{tag}</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400">تصفية</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Escrow Guarantee Highlight Widget */}
+          <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-2xl p-5 shadow-sm border border-slate-800">
+            <div className="flex items-center gap-2 mb-2 text-emerald-400">
+              <ShieldCheck className="w-5 h-5" />
+              <span className="font-extrabold text-xs">ضمان المعاملات المالية Escrow</span>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-relaxed mb-3">
+              كل معاملة شراء لمنتج رقمي محمية تلقائياً. أموالك محفوظة في محفظة الضمان لمدة 14 يوماً مع إمكانية استرجاع الأموال فوراً إذا لم يطابق الملف الوصف.
+            </p>
+            <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-800">
+              <span>أمان بنكي 100%</span>
+              <span className="text-emerald-400 font-bold">معتمد</span>
+            </div>
+          </div>
+        </aside>
+
       </div>
 
       {/* Fullscreen Media Lightbox Viewer Modal */}

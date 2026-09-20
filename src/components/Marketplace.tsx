@@ -98,27 +98,27 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
   }, [products, searchQuery, selectedCategory, sortBy]);
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 pb-14 animate-fadeIn">
+    <div className="w-full max-w-7xl mx-auto space-y-4 sm:space-y-6 pb-14 animate-fadeIn overflow-x-hidden">
       
       {/* Marketplace Banner / Escrow Guarantee Hero */}
-      <div className="bg-gradient-to-r from-emerald-700 via-teal-700 to-indigo-800 rounded-3xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden">
-        <div className="relative z-10 max-w-2xl space-y-3">
-          <div className="inline-flex items-center gap-2 bg-emerald-400/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold text-emerald-200 border border-emerald-300/30">
-            <ShieldCheck className="w-4 h-4 text-emerald-300" />
+      <div className="bg-gradient-to-r from-emerald-700 via-teal-700 to-indigo-800 rounded-2xl sm:rounded-3xl p-4 sm:p-8 text-white shadow-lg relative overflow-hidden">
+        <div className="relative z-10 max-w-2xl space-y-2.5 sm:space-y-3">
+          <div className="inline-flex items-center gap-1.5 sm:gap-2 bg-emerald-400/20 backdrop-blur-md px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-bold text-emerald-200 border border-emerald-300/30">
+            <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-300 shrink-0" />
             <span>حماية الضمان المالي Escrow 100% لجميع المعاملات</span>
           </div>
 
-          <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight">
+          <h2 className="text-xl sm:text-3xl font-black tracking-tight leading-snug sm:leading-tight">
             سوق المنتجات الرقمية الموثوقة والآمنة
           </h2>
           <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
             اشترِ القوالب البرمجية، التصاميم والكتب الرقمية مع ضمان استرجاع الأموال خلال 14 يوماً. يتم حجز أموالك في محفظة الضمان حتى تتأكد من سلامة الملف.
           </p>
 
-          <div className="pt-2 flex flex-wrap items-center gap-3 text-xs font-bold">
+          <div className="pt-1 sm:pt-2 flex flex-wrap items-center gap-3 text-xs font-bold">
             <button
               onClick={onOpenSellModal}
-              className="bg-amber-400 hover:bg-amber-500 text-slate-900 px-5 py-2.5 rounded-xl shadow-md transition flex items-center gap-2"
+              className="bg-amber-400 hover:bg-amber-500 text-slate-900 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl shadow-md transition flex items-center gap-2 text-xs font-bold"
             >
               <Sparkles className="w-4 h-4" />
               <span>ابدأ بيع منتجاتك الرقمية الآن</span>
@@ -131,8 +131,8 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
       </div>
 
       {/* Filter and Search Controls */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
-        <div className="flex flex-col md:flex-row items-center gap-3">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-sm space-y-2.5 sm:space-y-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
           
           {/* Search Input */}
           <div className="relative flex-1 w-full">
@@ -142,7 +142,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="ابحث عن قوالب، أكواد برمجية، تصاميم، أو اسم البائع..."
-              className="w-full pr-10 pl-10 py-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-emerald-500 dark:text-white transition"
+              className="w-full pr-10 pl-10 py-2 sm:py-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none focus:ring-2 focus:ring-emerald-500 dark:text-white transition"
             />
             {searchQuery && (
               <button
@@ -157,12 +157,12 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
           </div>
 
           {/* Sort Dropdown */}
-          <div className="flex items-center gap-2 w-full md:w-auto">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <SlidersHorizontal className="w-4 h-4 text-slate-400 shrink-0" />
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
-              className="w-full md:w-auto px-3 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 outline-none"
+              className="w-full sm:w-auto px-3 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 outline-none"
             >
               <option value="rating">الأعلى تقييماً للبائع ⭐</option>
               <option value="sales">الأكثر مبيعاً 📈</option>
@@ -173,7 +173,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
         </div>
 
         {/* Categories Pills */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none pt-1 border-t border-slate-100 dark:border-slate-800">
+        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 text-xs -mx-1 px-1 scrollbar-none pt-1 border-t border-slate-100 dark:border-slate-800">
           <span className="text-[11px] text-slate-400 font-bold shrink-0 ml-1">التصنيفات:</span>
           {CATEGORIES.map(cat => (
             <button
@@ -193,7 +193,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
 
       {/* Products Grid */}
       {filteredProducts.length === 0 ? (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-12 text-center space-y-4 shadow-sm">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 sm:p-12 text-center space-y-4 shadow-sm">
           <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
             <ShoppingCart className="w-8 h-8" />
           </div>
@@ -216,7 +216,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {filteredProducts.map(product => {
           const mainMedia = product.media?.[0];
           const hasVideo = product.media?.some(m => m.type === 'video');

@@ -2193,9 +2193,9 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100/70 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-100/70 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
       
-      {/* Top Header with Unified Switcher (Social vs Market preserved at the top) */}
+      {/* Top Header with Unified Switcher and Desktop Navigation */}
       <Header
         activeSection={activeSection}
         onSwitchSection={handleSwitchSection}
@@ -2217,10 +2217,26 @@ export default function App() {
             handleSelectTab(notif.linkTab);
           }
         }}
+        cartBadgeCount={cartBadgeCount}
+        unreadMessagesCount={activeSection === 'market' ? unreadMarketSendersCount : unreadSocialSendersCount}
+        onOpenCreatePost={() => {
+          if (!isLoggedIn) {
+            setIsAuthModalOpen(true);
+            return;
+          }
+          setIsCreatePostOpen(true);
+        }}
+        onOpenSellModal={() => {
+          if (!isLoggedIn) {
+            setIsAuthModalOpen(true);
+            return;
+          }
+          setIsCreateProductOpen(true);
+        }}
       />
 
-      {/* Main View Container with bottom padding for BottomNavBar */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-28 sm:pb-24">
+      {/* Main View Container: pb-28 on mobile (for bottom bar) and pb-12 on desktop */}
+      <main className="w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-28 md:pb-12 overflow-x-hidden">
         
         {/* TAB: Social Feed */}
         {activeTab === 'feed' && (
