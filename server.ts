@@ -1191,9 +1191,14 @@ app.post("/api/posts/:id/like", (req, res) => {
   try {
     const { id } = req.params;
     const { userId, username, postFallback } = req.body || {};
-    if (!userId && !username) {
-      return res.status(400).json({ error: "userId or username required" });
+    const cleanU = (username || "").replace(/^@/, "").toLowerCase().trim();
+    const rawId = (userId || "").trim();
+    const lowerId = rawId.toLowerCase();
+
+    if ((!rawId || rawId === "guest") && (!cleanU || cleanU === "guest")) {
+      return res.status(401).json({ error: "Guest users cannot like posts. Please log in." });
     }
+
     const posts = readJsonFile<any[]>(POSTS_FILE, []);
     let postIndex = posts.findIndex(p => p.id === id);
     if (postIndex < 0) {
@@ -1215,11 +1220,9 @@ app.post("/api/posts/:id/like", (req, res) => {
       postIndex = 0;
     }
     const post = posts[postIndex];
-    let likedUserIds: string[] = Array.isArray(post.likedUserIds) ? [...post.likedUserIds] : [];
-    
-    const cleanU = (username || "").replace(/^@/, "").toLowerCase().trim();
-    const rawId = (userId || "").trim();
-    const lowerId = rawId.toLowerCase();
+    let likedUserIds: string[] = (Array.isArray(post.likedUserIds) ? [...post.likedUserIds] : []).filter(
+      uid => uid && uid !== "guest"
+    );
 
     // Check if user already liked using both ID and username (case-insensitively & exact)
     const isAlreadyLiked = likedUserIds.some(uid => {
@@ -1234,7 +1237,7 @@ app.post("/api/posts/:id/like", (req, res) => {
     if (isAlreadyLiked) {
       // Remove like for this user (both ID and username variants)
       likedUserIds = likedUserIds.filter(uid => {
-        if (!uid) return false;
+        if (!uid || uid === "guest") return false;
         const uStr = String(uid).trim();
         const uLower = uStr.replace(/^@/, "").toLowerCase();
         const matchesId = rawId ? (uStr === rawId || uLower === lowerId) : false;
@@ -1243,15 +1246,19 @@ app.post("/api/posts/:id/like", (req, res) => {
       });
     } else {
       // Add like: preserve rawId (case sensitive) if valid and not guest, fallback to cleanU
-      const targetIdentifier = (rawId && rawId !== "guest") ? rawId : (cleanU || "guest");
-      const alreadyInList = likedUserIds.some(uid => {
-        const uStr = String(uid).trim();
-        return uStr === targetIdentifier || uStr.toLowerCase() === targetIdentifier.toLowerCase();
-      });
-      if (!alreadyInList) {
-        likedUserIds.push(targetIdentifier);
+      const targetIdentifier = (rawId && rawId !== "guest") ? rawId : cleanU;
+      if (targetIdentifier && targetIdentifier !== "guest") {
+        const alreadyInList = likedUserIds.some(uid => {
+          const uStr = String(uid).trim();
+          return uStr === targetIdentifier || uStr.toLowerCase() === targetIdentifier.toLowerCase();
+        });
+        if (!alreadyInList) {
+          likedUserIds.push(targetIdentifier);
+        }
       }
     }
+
+    likedUserIds = likedUserIds.filter(uid => uid && uid !== "guest");
 
     const updatedPost = {
       ...post,

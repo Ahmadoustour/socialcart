@@ -306,7 +306,8 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
           filteredPosts.map(post => {
           const activeIndex = activeMediaIndex[post.id] || 0;
           const currentMedia = post.media?.[activeIndex];
-          const isLiked = isPostLikedByUser(post, currentUser);
+          const isGuest = !currentUser || !currentUser.id || currentUser.id === 'guest' || !currentUser.email;
+          const isLiked = !isGuest && isPostLikedByUser(post, currentUser);
 
           return (
             <article 
@@ -444,7 +445,7 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
                     >
                       <img
                         src={currentMedia?.url}
-                        alt={currentMedia?.caption || post.title}
+                        alt={post.title || 'صورة المنشور'}
                         className="relative z-10 w-auto h-auto max-w-full max-h-[520px] object-contain mx-auto transition-transform duration-300 group-hover/media:scale-[1.015]"
                       />
 
@@ -470,13 +471,12 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
                     </div>
                   )}
 
-                  {/* Caption & Counter */}
-                  <div className="absolute bottom-2 inset-x-3 flex items-center justify-between text-[11px] bg-slate-900/80 backdrop-blur-sm text-white px-3 py-1.5 rounded-xl pointer-events-none z-20">
-                    <span className="truncate max-w-[80%]">{currentMedia?.caption || 'صورة مأمونة ومفحوصة'}</span>
-                    {post.media.length > 1 && (
-                      <span className="font-bold shrink-0">{activeIndex + 1} / {post.media.length}</span>
-                    )}
-                  </div>
+                  {/* Multiple Media Counter Badge Only (no filenames or captions) */}
+                  {post.media.length > 1 && (
+                    <div className="absolute bottom-2 left-3 text-[11px] bg-slate-900/80 backdrop-blur-sm text-white px-2.5 py-1 rounded-full font-bold pointer-events-none z-20 shadow-md">
+                      <span>{activeIndex + 1} / {post.media.length}</span>
+                    </div>
+                  )}
 
                   {/* Thumbnails Navigator if multiple media items */}
                   {post.media.length > 1 && (

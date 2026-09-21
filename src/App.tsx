@@ -396,9 +396,14 @@ export default function App() {
             avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
             isVerified: false
           },
-          media: Array.isArray(p.media) ? p.media : [],
+          media: (Array.isArray(p.media) ? p.media : []).map(m => ({
+            ...m,
+            caption: '' // Ensure no filenames are stored or rendered
+          })),
           comments: (Array.isArray(p.comments) ? p.comments : []).filter(c => !isFakeComment(c)),
           likesCount: typeof p.likesCount === 'number' ? p.likesCount : 0,
+          likedByMe: false, // Initial state before auth resolution must always be false
+          likedUserIds: (Array.isArray(p.likedUserIds) ? p.likedUserIds : []).filter(uid => uid && uid !== 'guest'),
           sharesCount: typeof p.sharesCount === 'number' ? p.sharesCount : 0,
           tags: Array.isArray(p.tags) ? p.tags : []
         }));
@@ -525,10 +530,11 @@ export default function App() {
       // 4. Notifications: Load user-specific notifications
       setNotifications(loadUserNotifications(currentId));
 
-      // 5. Update posts likedByMe flag for current user accurately
+      // 5. Update posts likedByMe flag for current user accurately (strictly false if guest)
+      const isGuest = !currentUser.id || currentUser.id === 'guest' || !currentUser.email;
       setPosts(prev => prev.map(p => ({
         ...p,
-        likedByMe: isPostLikedByUser(p, currentUser)
+        likedByMe: isGuest ? false : isPostLikedByUser(p, currentUser)
       })));
 
       previousUserIdRef.current = currentId;
@@ -1254,6 +1260,10 @@ export default function App() {
   // 1. Social Interactions Handlers
   const handleLikePost = async (postId: string) => {
     const user = currentUserRef.current;
+    if (!user || !user.id || user.id === 'guest' || !user.email) {
+      setIsAuthModalOpen(true);
+      return;
+    }
     const currentUserId = user.id;
     const currentUsername = (user.username || '').toLowerCase().trim().replace(/^@/, '');
 
@@ -1266,9 +1276,9 @@ export default function App() {
         const isCurrentlyLiked = isPostLikedByUser(p, user);
         willBeLiked = !isCurrentlyLiked;
 
-        const existingLikedUserIds: string[] = Array.isArray(p.likedUserIds)
+        const existingLikedUserIds: string[] = (Array.isArray(p.likedUserIds)
           ? [...p.likedUserIds]
-          : (p.likedByMe ? [currentUserId] : []);
+          : (p.likedByMe ? [currentUserId] : [])).filter(id => id && id !== 'guest');
 
         let newLikedUserIds: string[];
         let newLikesCount: number;
@@ -1276,7 +1286,7 @@ export default function App() {
         if (isCurrentlyLiked) {
           // Remove all matching variants of current user id or username
           newLikedUserIds = existingLikedUserIds.filter(id => {
-            if (!id) return false;
+            if (!id || id === 'guest') return false;
             const s = String(id).trim().replace(/^@/, '').toLowerCase();
             const matchesId = currentUserId && (id === currentUserId || s === currentUserId.toLowerCase());
             const matchesUser = currentUsername && (s === currentUsername);
@@ -1284,9 +1294,8 @@ export default function App() {
           });
           newLikesCount = Math.max(0, (typeof p.likesCount === 'number' ? p.likesCount : existingLikedUserIds.length) - 1);
         } else {
-          // Add primary identifier (current user id if available and not guest, else username)
-          const primaryId = (currentUserId && currentUserId !== 'guest') ? currentUserId : (currentUsername || 'guest');
-          newLikedUserIds = Array.from(new Set([...existingLikedUserIds, primaryId]));
+          // Add primary identifier (authenticated user ID)
+          newLikedUserIds = Array.from(new Set([...existingLikedUserIds, currentUserId])).filter(id => id && id !== 'guest');
           newLikesCount = Math.max(newLikedUserIds.length, (typeof p.likesCount === 'number' ? p.likesCount : 0) + 1);
         }
 

@@ -96,10 +96,10 @@ export function mergePostLists(currentPosts: Post[], incomingPosts: Post[], acti
         (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
       );
 
-      // Merge likes: combine likedUserIds safely
+      // Merge likes: combine likedUserIds safely (excluding guest)
       const existingLikes = Array.isArray(existing.likedUserIds) ? existing.likedUserIds : [];
       const incomingLikes = Array.isArray(incoming.likedUserIds) ? incoming.likedUserIds : [];
-      const mergedLikes = Array.from(new Set([...existingLikes, ...incomingLikes]));
+      const mergedLikes = Array.from(new Set([...existingLikes, ...incomingLikes])).filter(uid => uid && uid !== 'guest');
 
       const isLiked = isPostLikedByUser({
         ...incoming,

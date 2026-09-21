@@ -22,15 +22,24 @@ export function isPostLikedByUser(
 ): boolean {
   if (!entity) return false;
 
-  const userIds = Array.isArray(entity.likedUserIds) ? entity.likedUserIds : [];
+  // STRICT RULE: Guest or unauthenticated users CANNOT have liked posts
+  // Liking is only possible after authenticating/logging in.
   const rawUserId = user?.id ? String(user.id).trim() : '';
+  const isGuest = !user || !rawUserId || rawUserId === 'guest' || !user.email;
+  if (isGuest) {
+    return false;
+  }
+
+  const userIds = Array.isArray(entity.likedUserIds)
+    ? entity.likedUserIds.filter(uid => uid && uid !== 'guest')
+    : [];
   const lowerUserId = rawUserId.toLowerCase();
   const cleanUsername = normalizeLikeId(user?.username);
 
-  // If we have a logged-in or identified user and a list of liked user IDs
-  if (userIds.length > 0 && (rawUserId || cleanUsername)) {
+  // If we have a list of liked user IDs, match against current authenticated user
+  if (userIds.length > 0) {
     const hasMatch = userIds.some(uid => {
-      if (!uid) return false;
+      if (!uid || uid === 'guest') return false;
       const rawUid = String(uid).trim();
       const lowerUid = rawUid.toLowerCase();
       const normUid = normalizeLikeId(rawUid);
@@ -48,13 +57,10 @@ export function isPostLikedByUser(
 
     if (hasMatch) return true;
 
-    // If userIds list is populated and user is authenticated (not guest),
-    // and neither ID nor username is in the list, then it is NOT liked by this user
-    if (rawUserId && rawUserId !== 'guest') {
-      return false;
-    }
+    // Authenticated user is not in the likedUserIds list
+    return false;
   }
 
-  // Fallback to likedByMe flag for guest mode, initial state, or unpopulated lists
+  // Fallback to likedByMe ONLY for authenticated users before remote sync finishes
   return Boolean(entity.likedByMe);
 }

@@ -69,7 +69,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({ isOpen, 
       id: `prod_med_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       type,
       url,
-      caption: caption || (type === 'video' ? 'فيديو استعراض المنتج' : 'صورة واجهة المنتج')
+      caption: ''
     };
 
     setMediaList(prev => [...prev, newItem]);
@@ -92,7 +92,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({ isOpen, 
     reader.onload = (event) => {
       const result = event.target?.result as string;
       if (result) {
-        handleAddMedia(result, isVid ? 'video' : 'image', file.name);
+        handleAddMedia(result, isVid ? 'video' : 'image', '');
       }
     };
     reader.readAsDataURL(file);

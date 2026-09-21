@@ -26,6 +26,14 @@ interface MediaLightboxModalProps {
   };
 }
 
+// Helper to identify and suppress raw filenames or paths
+const isFileName = (str?: string) => {
+  if (!str) return false;
+  const trimmed = str.trim();
+  return /\.(jpg|jpeg|png|gif|webp|svg|bmp|mp4|mov|webm|avi|mkv|pdf|heic)$/i.test(trimmed) ||
+    /^(image|img|video|vid|file|photo|screenshot|media|chat_med)[\d_.-]/i.test(trimmed);
+};
+
 export const MediaLightboxModal: React.FC<MediaLightboxModalProps> = ({
   isOpen,
   onClose,
@@ -132,7 +140,11 @@ export const MediaLightboxModal: React.FC<MediaLightboxModalProps> = ({
               </div>
             )}
             <div className="text-slate-400 text-[11px] truncate">
-              {title || currentMedia.caption || (currentMedia.type === 'video' ? 'مقطع فيديو' : 'صورة')}
+              {title && !isFileName(title)
+                ? title
+                : (currentMedia.caption && !isFileName(currentMedia.caption)
+                    ? currentMedia.caption
+                    : (currentMedia.type === 'video' ? 'مقطع فيديو' : 'صورة'))}
             </div>
           </div>
         </div>
@@ -271,8 +283,8 @@ export const MediaLightboxModal: React.FC<MediaLightboxModalProps> = ({
 
       {/* Bottom Bar: Caption & Thumbnails */}
       <div className="bg-black/70 backdrop-blur-sm border-t border-white/10 px-4 py-3 z-20 space-y-2">
-        {/* Caption text */}
-        {currentMedia.caption && (
+        {/* Caption text - suppressed if raw filename */}
+        {currentMedia.caption && !isFileName(currentMedia.caption) && (
           <p className="text-center text-xs sm:text-sm text-slate-200 font-medium max-w-2xl mx-auto truncate">
             {currentMedia.caption}
           </p>

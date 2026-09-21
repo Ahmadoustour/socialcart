@@ -67,7 +67,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClos
       id: `med_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       type,
       url,
-      caption: caption || (type === 'video' ? 'مقطع فيديو توضيحي' : 'صورة مرفقة')
+      caption: ''
     };
 
     // Adds to the list without clearing existing ones!
@@ -93,7 +93,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClos
     reader.onload = (event) => {
       const result = event.target?.result as string;
       if (result) {
-        handleAddMedia(result, isVid ? 'video' : 'image', file.name);
+        handleAddMedia(result, isVid ? 'video' : 'image', '');
       }
     };
     reader.readAsDataURL(file);

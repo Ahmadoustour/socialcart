@@ -304,7 +304,7 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
           id: `chat_med_${Date.now()}`,
           type: isVid ? 'video' : 'image',
           url: result,
-          caption: file.name
+          caption: ''
         };
         setAttachedMedia(prev => [...prev, item]);
       }
@@ -913,7 +913,7 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                                       <div className="relative group/img overflow-hidden">
                                         <img 
                                           src={m.url} 
-                                          alt={m.caption || ''} 
+                                          alt="" 
                                           className="w-full max-h-56 object-cover rounded-lg transition-transform duration-200 group-hover:scale-105" 
                                           loading="lazy"
                                         />
