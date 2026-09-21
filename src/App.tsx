@@ -23,6 +23,8 @@ import { onAuthStateChanged, signOut, updatePassword, updateProfile, updateEmail
 import {
   fetchRemotePosts,
   saveRemotePost,
+  addRemoteComment,
+  deleteRemoteComment,
   toggleRemotePostLike,
   deleteRemotePost,
   subscribeToRemotePosts,
@@ -41,6 +43,7 @@ import {
   fetchRemoteUser,
   saveRemoteUser
 } from './services/dataService';
+import { mergePostLists } from './utils/postUtils';
 import { 
   User, 
   SavedCard,
@@ -591,47 +594,13 @@ export default function App() {
   useEffect(() => {
     fetchRemotePosts().then(remotePosts => {
       if (Array.isArray(remotePosts) && remotePosts.length > 0) {
-        setPosts(prev => {
-          const map = new Map<string, Post>();
-          const activeUser = currentUserRef.current;
-          remotePosts.forEach(p => {
-            if (p && p.id) {
-              map.set(p.id, {
-                ...p,
-                likedByMe: isPostLikedByUser(p, activeUser)
-              });
-            }
-          });
-          prev.forEach(p => {
-            if (p && p.id && !map.has(p.id)) {
-              map.set(p.id, p);
-            }
-          });
-          return Array.from(map.values());
-        });
+        setPosts(prev => mergePostLists(prev, remotePosts, currentUserRef.current));
       }
     });
 
     const unsubPosts = subscribeToRemotePosts(updatedPosts => {
       if (Array.isArray(updatedPosts) && updatedPosts.length > 0) {
-        setPosts(prev => {
-          const map = new Map<string, Post>();
-          const activeUser = currentUserRef.current;
-          updatedPosts.forEach(p => {
-            if (p && p.id) {
-              map.set(p.id, {
-                ...p,
-                likedByMe: isPostLikedByUser(p, activeUser)
-              });
-            }
-          });
-          prev.forEach(p => {
-            if (p && p.id && !map.has(p.id)) {
-              map.set(p.id, p);
-            }
-          });
-          return Array.from(map.values());
-        });
+        setPosts(prev => mergePostLists(prev, updatedPosts, currentUserRef.current));
       }
     });
 
@@ -1303,7 +1272,7 @@ export default function App() {
     if (!trimmed) return;
 
     const newComment = {
-      id: `c_${Date.now()}`,
+      id: `c_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       userId: currentUser.id,
       username: currentUser.username,
       userAvatar: currentUser.avatar,
@@ -1314,9 +1283,10 @@ export default function App() {
     let targetPost: Post | null = null;
     setPosts(prev => prev.map(p => {
       if (p.id === postId) {
+        const existingComments = Array.isArray(p.comments) ? p.comments : [];
         const updated = {
           ...p,
-          comments: [newComment, ...(Array.isArray(p.comments) ? p.comments : [])]
+          comments: [newComment, ...existingComments.filter(c => c.id !== newComment.id)]
         };
         targetPost = updated;
         return updated;
@@ -1325,7 +1295,7 @@ export default function App() {
     }));
 
     if (targetPost) {
-      await saveRemotePost(targetPost);
+      await addRemoteComment(postId, newComment, targetPost);
     }
   };
 
@@ -1358,21 +1328,8 @@ export default function App() {
       return p;
     }));
 
-    // Server-side deletion endpoint with requester info for security validation
-    try {
-      const queryParams = new URLSearchParams({
-        requesterUsername: currentUser.username || '',
-        requesterUserId: currentUser.id || ''
-      });
-      await fetch(`/api/posts/${postId}/comments/${commentId}?${queryParams.toString()}`, {
-        method: 'DELETE'
-      });
-    } catch (err) {
-      console.error('Failed to delete comment via endpoint:', err);
-    }
-
     if (targetPost) {
-      saveRemotePost(targetPost);
+      await deleteRemoteComment(postId, commentId, targetPost);
     }
   };
 

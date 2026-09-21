@@ -672,10 +672,6 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
                   )}
                 </div>
                 <p className="text-xs text-slate-400 truncate">@{currentUser.username}</p>
-                <div className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>متصل الآن</span>
-                </div>
               </div>
             </div>
 

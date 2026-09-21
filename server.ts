@@ -1034,6 +1034,8 @@ app.post("/api/security/scan-content", (req, res) => {
 // 6. Posts Persistence APIs
 app.get("/api/posts", (req, res) => {
   const posts = readJsonFile<any[]>(POSTS_FILE, []);
+  // Always sort deterministic newest-first by createdAt
+  posts.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
   res.json(posts);
 });
 
@@ -1053,7 +1055,9 @@ app.post("/api/posts", (req, res) => {
       const commentsMap = new Map<string, any>();
       incomingComments.forEach(c => { if (c && c.id) commentsMap.set(c.id, c); });
       existingComments.forEach(c => { if (c && c.id && !commentsMap.has(c.id)) commentsMap.set(c.id, c); });
-      const mergedComments = Array.from(commentsMap.values());
+      const mergedComments = Array.from(commentsMap.values()).sort(
+        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      );
 
       // Safely preserve likedUserIds so periodic post saves never wipe out atomic likes
       const existingLikes = Array.isArray(existing.likedUserIds) ? existing.likedUserIds : [];
@@ -1069,10 +1073,68 @@ app.post("/api/posts", (req, res) => {
     } else {
       posts.unshift(post);
     }
+    // Sort before saving
+    posts.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     writeJsonFile(POSTS_FILE, posts);
     res.json(posts[existingIndex >= 0 ? existingIndex : 0]);
   } catch (error: any) {
     res.status(500).json({ error: error.message || "Failed to save post" });
+  }
+});
+
+// Atomic add comment endpoint to eliminate race conditions
+app.post("/api/posts/:id/comments", (req, res) => {
+  try {
+    const { id } = req.params;
+    const comment = req.body;
+    if (!comment || !comment.text) {
+      return res.status(400).json({ error: "Invalid comment data" });
+    }
+    const posts = readJsonFile<any[]>(POSTS_FILE, []);
+    const postIndex = posts.findIndex(p => p.id === id);
+    if (postIndex < 0) {
+      return res.status(404).json({ error: "Post not found" });
+    }
+    const post = posts[postIndex];
+    const existingComments = Array.isArray(post.comments) ? post.comments : [];
+    const newComment = {
+      id: comment.id || `c_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      userId: comment.userId || "anonymous",
+      username: comment.username || "user",
+      userAvatar: comment.userAvatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80",
+      text: comment.text,
+      createdAt: comment.createdAt || new Date().toISOString()
+    };
+    const updatedComments = [newComment, ...existingComments.filter(c => c.id !== newComment.id)];
+    posts[postIndex] = {
+      ...post,
+      comments: updatedComments
+    };
+    writeJsonFile(POSTS_FILE, posts);
+    res.json({ success: true, comment: newComment, comments: updatedComments });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to add comment" });
+  }
+});
+
+// Atomic delete comment endpoint
+app.delete("/api/posts/:id/comments/:commentId", (req, res) => {
+  try {
+    const { id, commentId } = req.params;
+    const posts = readJsonFile<any[]>(POSTS_FILE, []);
+    const postIndex = posts.findIndex(p => p.id === id);
+    if (postIndex >= 0) {
+      const post = posts[postIndex];
+      const existingComments = Array.isArray(post.comments) ? post.comments : [];
+      posts[postIndex] = {
+        ...post,
+        comments: existingComments.filter(c => c.id !== commentId)
+      };
+      writeJsonFile(POSTS_FILE, posts);
+    }
+    res.json({ success: true, commentId });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to delete comment" });
   }
 });
 

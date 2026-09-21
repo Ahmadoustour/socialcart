@@ -83,7 +83,57 @@ export async function fetchRemotePosts(): Promise<Post[]> {
     });
   }
 
-  return Array.from(postMap.values());
+  const combined = Array.from(postMap.values());
+  combined.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  return combined;
+}
+
+export async function addRemoteComment(postId: string, comment: any, postFallback?: Post): Promise<void> {
+  // 1. Write to Firestore if ready
+  if (isFirebaseReady()) {
+    try {
+      await updateDoc(doc(db, 'posts', postId), {
+        comments: arrayUnion(comment)
+      });
+    } catch (err) {
+      if (postFallback) {
+        setDoc(doc(db, 'posts', postId), postFallback, { merge: true }).catch(() => {});
+      }
+    }
+  }
+
+  // 2. Write to Express Backend
+  try {
+    const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(comment)
+    });
+    if (!res.ok && postFallback) {
+      // Fallback to saving whole post
+      saveRemotePost(postFallback).catch(() => {});
+    }
+  } catch (err) {
+    if (postFallback) {
+      saveRemotePost(postFallback).catch(() => {});
+    }
+  }
+}
+
+export async function deleteRemoteComment(postId: string, commentId: string, postFallback?: Post): Promise<void> {
+  // 1. Update on Express Server
+  try {
+    await fetch(`/api/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`, {
+      method: 'DELETE'
+    });
+  } catch (err) {
+    console.warn('Notice: Server delete comment:', err);
+  }
+
+  // 2. Also sync post to Firestore / server fallback
+  if (postFallback) {
+    saveRemotePost(postFallback).catch(() => {});
+  }
 }
 
 export async function saveRemotePost(post: Post): Promise<void> {
@@ -176,6 +226,7 @@ export function subscribeToRemotePosts(onUpdate: (posts: Post[]) => void): () =>
             const item = d.data() as Post;
             if (item && item.id) list.push(item);
           });
+          list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
           onUpdate(list);
         }
       }, (err) => {
@@ -192,7 +243,8 @@ export function subscribeToRemotePosts(onUpdate: (posts: Post[]) => void): () =>
       .then(res => res.ok ? res.json() : [])
       .then((serverPosts: Post[]) => {
         if (Array.isArray(serverPosts) && serverPosts.length > 0) {
-          onUpdate(serverPosts);
+          const sorted = [...serverPosts].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          onUpdate(sorted);
         }
       })
       .catch(() => {});

@@ -721,7 +721,6 @@ export const MessagesHub: React.FC<MessagesHubProps> = ({
                     </div>
 
                     <div className="flex items-center gap-2 text-[10px] sm:text-[11px]">
-                      <span className="text-emerald-600 dark:text-emerald-400 font-medium">● متصل الآن</span>
                       {isMarket ? (
                         <span className="bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded-md font-bold text-[10px]">
                           استفسار منتج رقمي
