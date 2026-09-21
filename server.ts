@@ -1031,12 +1031,60 @@ app.post("/api/security/scan-content", (req, res) => {
   }
 });
 
+// Global Fake / Mock Entity Detectors to exclude any dummy, test or mock items completely
+const SERVER_FAKE_USERNAMES = new Set([
+  'sarah_art', 'ahmed_tech', 'usr_sarah_art', 'usr_ahmed_tech', 'ahmed_dev', 'usr_me',
+  'demo_seller', 'seller', 'member', 'sara_dev', 'faisal_designer', 'nour_crypto',
+  'layla_ui', 'dev_omar', 'fake_user', 'test_user', 'demo_user'
+]);
+
+function isServerFakePost(p: any): boolean {
+  if (!p || !p.id) return true;
+  const idStr = String(p.id).toLowerCase();
+  if (idStr.startsWith('demo_') || idStr.startsWith('sample_') || idStr.startsWith('test_')) return true;
+  if (['demo_post_1', 'demo_post_2', 'demo_post_3', 'post_init_1', 'post_init_2'].includes(idStr)) return true;
+  const u = (p.author?.username || p.username || '').toLowerCase().trim();
+  if (SERVER_FAKE_USERNAMES.has(u)) return true;
+  const uid = (p.author?.id || p.userId || '').toLowerCase().trim();
+  if (SERVER_FAKE_USERNAMES.has(uid)) return true;
+  return false;
+}
+
+function isServerFakeComment(c: any): boolean {
+  if (!c || !c.id) return true;
+  const idStr = String(c.id).toLowerCase();
+  if (idStr.startsWith('c_demo_') || idStr.startsWith('demo_') || idStr.startsWith('test_')) return true;
+  const u = (c.username || '').toLowerCase().trim();
+  if (SERVER_FAKE_USERNAMES.has(u)) return true;
+  const uid = (c.userId || '').toLowerCase().trim();
+  if (SERVER_FAKE_USERNAMES.has(uid)) return true;
+  return false;
+}
+
+function isServerFakeProduct(prod: any): boolean {
+  if (!prod || !prod.id) return true;
+  const idStr = String(prod.id).toLowerCase();
+  if (idStr.startsWith('demo_') || idStr.startsWith('sample_') || idStr.startsWith('test_')) return true;
+  if (['demo_prod_1', 'demo_prod_2', 'demo_prod_3', 'prod_1', 'prod_2', 'prod_3'].includes(idStr)) return true;
+  const seller = (prod.seller?.username || '').toLowerCase().trim();
+  if (SERVER_FAKE_USERNAMES.has(seller)) return true;
+  return false;
+}
+
 // 6. Posts Persistence APIs
 app.get("/api/posts", (req, res) => {
   const posts = readJsonFile<any[]>(POSTS_FILE, []);
+  // Filter out any fake posts and fake comments
+  const cleanPosts = posts
+    .filter(p => !isServerFakePost(p))
+    .map(p => ({
+      ...p,
+      comments: (Array.isArray(p.comments) ? p.comments : []).filter(c => !isServerFakeComment(c))
+    }));
+
   // Always sort deterministic newest-first by createdAt
-  posts.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-  res.json(posts);
+  cleanPosts.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  res.json(cleanPosts);
 });
 
 app.post("/api/posts", (req, res) => {
@@ -1271,7 +1319,17 @@ app.delete("/api/posts/:postId/comments/:commentId", (req, res) => {
 // 7. Products Persistence APIs
 app.get("/api/products", (req, res) => {
   const products = readJsonFile<any[]>(PRODUCTS_FILE, []);
-  res.json(products);
+  const cleanProducts = products
+    .filter(p => !isServerFakeProduct(p))
+    .map(p => ({
+      ...p,
+      reviews: (Array.isArray(p.reviews) ? p.reviews : []).filter((r: any) => {
+        if (!r || !r.id) return false;
+        const buyer = (r.buyerUsername || '').toLowerCase();
+        return !SERVER_FAKE_USERNAMES.has(buyer) && !r.id.startsWith('rev_demo_');
+      })
+    }));
+  res.json(cleanProducts);
 });
 
 app.post("/api/products", (req, res) => {
@@ -1385,7 +1443,8 @@ app.post("/api/security/verify-captcha", (req, res) => {
 
 app.get("/api/users", (req, res) => {
   const users = readJsonFile<any[]>(USERS_FILE, []);
-  res.json(users);
+  const cleanUsers = users.filter(u => u && !SERVER_FAKE_USERNAMES.has(u.username?.toLowerCase()) && !u.id?.startsWith('demo_'));
+  res.json(cleanUsers);
 });
 
 app.get("/api/users/:identifier", (req, res) => {

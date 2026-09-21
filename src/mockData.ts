@@ -8,7 +8,7 @@ export const CURRENT_USER: User = {
   avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
   joinedDate: '2026',
   isVerifiedSeller: false,
-  sellerRating: 5.0,
+  sellerRating: 0,
   sellerReviewsCount: 0,
   totalSales: 0,
   trustScore: 100,

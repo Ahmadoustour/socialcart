@@ -43,7 +43,7 @@ import {
   fetchRemoteUser,
   saveRemoteUser
 } from './services/dataService';
-import { mergePostLists } from './utils/postUtils';
+import { mergePostLists, FAKE_USERNAMES, isFakePost, isFakeComment } from './utils/postUtils';
 import { 
   User, 
   SavedCard,
@@ -145,7 +145,6 @@ function addDeletedConvId(userId: string, convId: string) {
 }
 
 const FAKE_CONVERSATION_IDS = new Set(['conv_sarah_welcome', 'conv_ahmed_inquiry']);
-const FAKE_USERNAMES = new Set(['sarah_art', 'ahmed_tech', 'usr_sarah_art', 'usr_ahmed_tech', 'ahmed_dev', 'usr_me']);
 
 function loadUserConversations(userId: string, username?: string): Conversation[] {
   // Clean up dangerous legacy shared key so it can never leak to new accounts
@@ -387,19 +386,18 @@ export default function App() {
     try {
       const parsed: Post[] = JSON.parse(saved);
       if (!Array.isArray(parsed)) return [];
-      const sampleIds = new Set(['demo_post_1', 'demo_post_2', 'demo_post_3', 'post_init_1', 'post_init_2']);
       const clean = parsed
-        .filter(p => p && p.id && !sampleIds.has(p.id))
+        .filter(p => !isFakePost(p))
         .map(p => ({
           ...p,
           author: p.author || {
-            username: 'member',
-            displayName: 'عضو المنصة',
+            username: 'user',
+            displayName: 'مستخدم المنصة',
             avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
             isVerified: false
           },
           media: Array.isArray(p.media) ? p.media : [],
-          comments: Array.isArray(p.comments) ? p.comments : [],
+          comments: (Array.isArray(p.comments) ? p.comments : []).filter(c => !isFakeComment(c)),
           likesCount: typeof p.likesCount === 'number' ? p.likesCount : 0,
           sharesCount: typeof p.sharesCount === 'number' ? p.sharesCount : 0,
           tags: Array.isArray(p.tags) ? p.tags : []
@@ -421,13 +419,23 @@ export default function App() {
       if (!Array.isArray(parsed)) return [];
       const sampleProdIds = new Set(['demo_prod_1', 'demo_prod_2', 'demo_prod_3', 'prod_1', 'prod_2', 'prod_3']);
       const clean = parsed
-        .filter(p => p && p.id && !sampleProdIds.has(p.id))
+        .filter(p => {
+          if (!p || !p.id || sampleProdIds.has(p.id)) return false;
+          if (p.id.startsWith('demo_') || p.id.startsWith('sample_')) return false;
+          const sellerName = p.seller?.username?.toLowerCase() || '';
+          if (FAKE_USERNAMES.has(sellerName)) return false;
+          return true;
+        })
         .map(p => {
-          const revs = Array.isArray(p.reviews) ? p.reviews : [];
+          const revs = (Array.isArray(p.reviews) ? p.reviews : []).filter(r => {
+            if (!r || !r.id) return false;
+            const buyer = (r.buyerUsername || '').toLowerCase();
+            return !FAKE_USERNAMES.has(buyer) && !r.id.startsWith('rev_demo_');
+          });
           const actualCount = revs.length;
           const actualRating = actualCount > 0
             ? Number((revs.reduce((s, r) => s + Number(r.rating || 0), 0) / actualCount).toFixed(1))
-            : (actualCount === 0 ? 0 : (p.seller?.rating || 5.0));
+            : 0;
 
           return {
             ...p,
@@ -437,9 +445,9 @@ export default function App() {
             seller: {
               ...(p.seller || {
                 username: 'seller',
-                displayName: 'بائع معتمد',
+                displayName: 'بائع المنصة',
                 avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-                isVerified: true,
+                isVerified: false,
                 rating: actualRating,
                 reviewsCount: actualCount,
                 trustScore: 98
@@ -589,6 +597,51 @@ export default function App() {
     const key = getUserStorageKey('socialcart_notifications', currentUser.id);
     localStorage.setItem(key, JSON.stringify(notifications));
   }, [notifications, currentUser.id]);
+
+  // One-time cleanup effect to purge any legacy mock/fake items from browser storage
+  useEffect(() => {
+    try {
+      // 1. Clean registered users
+      const reg = localStorage.getItem('socialcart_registered_users');
+      if (reg) {
+        const parsed = JSON.parse(reg);
+        if (Array.isArray(parsed)) {
+          const cleanUsers = parsed.filter(u => u && u.username && !FAKE_USERNAMES.has(u.username.toLowerCase()));
+          localStorage.setItem('socialcart_registered_users', JSON.stringify(cleanUsers));
+        }
+      }
+
+      // 2. Clean posts
+      const postsRaw = localStorage.getItem('socialcart_posts');
+      if (postsRaw) {
+        const parsedPosts = JSON.parse(postsRaw);
+        if (Array.isArray(parsedPosts)) {
+          const cleanPosts = parsedPosts
+            .filter(p => !isFakePost(p))
+            .map(p => ({
+              ...p,
+              comments: (Array.isArray(p.comments) ? p.comments : []).filter(c => !isFakeComment(c))
+            }));
+          localStorage.setItem('socialcart_posts', JSON.stringify(cleanPosts));
+        }
+      }
+
+      // 3. Clean products
+      const prodRaw = localStorage.getItem('socialcart_products');
+      if (prodRaw) {
+        const parsedProds = JSON.parse(prodRaw);
+        if (Array.isArray(parsedProds)) {
+          const cleanProds = parsedProds.filter(p => {
+            if (!p || !p.id) return false;
+            if (p.id.startsWith('demo_') || p.id.startsWith('sample_')) return false;
+            const seller = p.seller?.username?.toLowerCase() || '';
+            return !FAKE_USERNAMES.has(seller);
+          });
+          localStorage.setItem('socialcart_products', JSON.stringify(cleanProds));
+        }
+      }
+    } catch {}
+  }, []);
 
   // 1. Real-time Subscription and Remote Synchronization for Posts
   useEffect(() => {
