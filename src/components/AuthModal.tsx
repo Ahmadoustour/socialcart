@@ -17,6 +17,7 @@ import {
 import { User } from '../types';
 import { auth, googleProvider } from '../lib/firebase';
 import { saveRemoteUser } from '../services/dataService';
+import { RobotVerification } from './RobotVerification';
 import { 
   signInWithPopup, 
   signInWithEmailAndPassword, 
@@ -66,6 +67,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [isLockedOut, setIsLockedOut] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRobotVerified, setIsRobotVerified] = useState(false);
 
   if (!isOpen) return null;
 
@@ -76,6 +78,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     if (isLockedOut) {
       setErrorMsg('⚠️ تم تجميد تسجيل الدخول مؤقتاً لحماية الحساب من محاولات التخمين المتكررة. يرجى المحاولة لاحقاً.');
+      return;
+    }
+
+    if (!isRobotVerified) {
+      setErrorMsg('🛡️ يرجى تأكيد أنك لست برنامج روبوت (حدد المربع أدناه) للمتابعة.');
       return;
     }
 
@@ -304,6 +311,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     const cleanUsername = regUsername.toLowerCase().replace(/\s+/g, '');
     const cleanEmail = regEmail.trim().toLowerCase();
     const cleanName = regDisplayName.trim();
+
+    if (!isRobotVerified) {
+      setErrorMsg('🛡️ يرجى تأكيد أنك لست برنامج روبوت (حدد المربع أدناه) لإتمام إنشاء الحساب.');
+      return;
+    }
 
     if (!cleanName || !cleanUsername || !cleanEmail || !regPassword) {
       setErrorMsg('يرجى ملء جميع الحقول المطلوبة.');
@@ -543,6 +555,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             onClick={() => {
               setMode('login');
               setErrorMsg(null);
+              setIsRobotVerified(false);
             }}
             className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
               mode === 'login'
@@ -558,6 +571,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             onClick={() => {
               setMode('register');
               setErrorMsg(null);
+              setIsRobotVerified(false);
             }}
             className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
               mode === 'register'
@@ -677,6 +691,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             </div>
 
+            {/* Anti-Bot Verification Challenge */}
+            <div className="pt-1">
+              <RobotVerification
+                isVerified={isRobotVerified}
+                onVerify={() => {
+                  setIsRobotVerified(true);
+                  setErrorMsg(null);
+                }}
+                onReset={() => setIsRobotVerified(false)}
+              />
+            </div>
+
             <button
               type="submit"
               disabled={isSubmitting}
@@ -777,9 +803,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             </div>
 
+            {/* Anti-Bot Verification Challenge */}
+            <div className="pt-1">
+              <RobotVerification
+                isVerified={isRobotVerified}
+                onVerify={() => {
+                  setIsRobotVerified(true);
+                  setErrorMsg(null);
+                }}
+                onReset={() => setIsRobotVerified(false)}
+              />
+            </div>
+
             <button
               type="submit"
-              className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-500/20 transition flex items-center justify-center gap-2 mt-4"
+              disabled={isSubmitting}
+              className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-emerald-500/20 transition flex items-center justify-center gap-2 mt-4"
             >
               <UserPlus className="w-4 h-4" />
               <span>إنشاء الحساب وبدء التجربة</span>

@@ -111,17 +111,20 @@ export async function saveRemotePost(post: Post): Promise<void> {
 export async function toggleRemotePostLike(
   postId: string,
   userId: string,
-  username: string
+  username: string,
+  postFallback?: Partial<Post> | null
 ): Promise<{ likedUserIds: string[]; likesCount: number } | null> {
+  let result: { likedUserIds: string[]; likesCount: number } | null = null;
+
   try {
     const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/like`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, username })
+      body: JSON.stringify({ userId, username, postFallback })
     });
     if (res.ok) {
       const data = await res.json();
-      return {
+      result = {
         likedUserIds: Array.isArray(data.likedUserIds) ? data.likedUserIds : [],
         likesCount: typeof data.likesCount === 'number' ? data.likesCount : 0
       };
@@ -129,7 +132,20 @@ export async function toggleRemotePostLike(
   } catch (err) {
     console.warn('Notice: Server toggle post like:', err);
   }
-  return null;
+
+  // Also sync with Firestore if active
+  if (isFirebaseReady() && result) {
+    try {
+      await setDoc(doc(db, 'posts', postId), {
+        likedUserIds: result.likedUserIds,
+        likesCount: result.likesCount
+      }, { merge: true });
+    } catch (err) {
+      console.warn('Notice: Firestore like sync:', err);
+    }
+  }
+
+  return result;
 }
 
 export async function deleteRemotePost(postId: string): Promise<void> {

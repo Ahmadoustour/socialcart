@@ -16,6 +16,7 @@ import { ProductReviewsModal } from './components/ProductReviewsModal';
 import { BottomNavBar } from './components/BottomNavBar';
 import { AuthModal } from './components/AuthModal';
 import { AccountMenuModal } from './components/AccountMenuModal';
+import { isPostLikedByUser } from './utils/likeUtils';
 
 import { auth } from './lib/firebase';
 import { onAuthStateChanged, signOut, updatePassword, updateProfile, updateEmail } from 'firebase/auth';
@@ -372,6 +373,11 @@ export default function App() {
     return GUEST_USER;
   });
 
+  const currentUserRef = useRef<User>(currentUser);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
   const [posts, setPosts] = useState<Post[]>(() => {
     const saved = localStorage.getItem('socialcart_posts');
     if (!saved) return [];
@@ -508,14 +514,11 @@ export default function App() {
       // 4. Notifications: Load user-specific notifications
       setNotifications(loadUserNotifications(currentId));
 
-      // 5. Update posts likedByMe flag for current user
-      setPosts(prev => prev.map(p => {
-        const likedIds = Array.isArray(p.likedUserIds) ? p.likedUserIds : [];
-        return {
-          ...p,
-          likedByMe: likedIds.includes(currentId)
-        };
-      }));
+      // 5. Update posts likedByMe flag for current user accurately
+      setPosts(prev => prev.map(p => ({
+        ...p,
+        likedByMe: isPostLikedByUser(p, currentUser)
+      })));
 
       previousUserIdRef.current = currentId;
     }
@@ -590,8 +593,20 @@ export default function App() {
       if (Array.isArray(remotePosts) && remotePosts.length > 0) {
         setPosts(prev => {
           const map = new Map<string, Post>();
-          remotePosts.forEach(p => { if (p && p.id) map.set(p.id, p); });
-          prev.forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
+          const activeUser = currentUserRef.current;
+          remotePosts.forEach(p => {
+            if (p && p.id) {
+              map.set(p.id, {
+                ...p,
+                likedByMe: isPostLikedByUser(p, activeUser)
+              });
+            }
+          });
+          prev.forEach(p => {
+            if (p && p.id && !map.has(p.id)) {
+              map.set(p.id, p);
+            }
+          });
           return Array.from(map.values());
         });
       }
@@ -601,8 +616,20 @@ export default function App() {
       if (Array.isArray(updatedPosts) && updatedPosts.length > 0) {
         setPosts(prev => {
           const map = new Map<string, Post>();
-          updatedPosts.forEach(p => { if (p && p.id) map.set(p.id, p); });
-          prev.forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
+          const activeUser = currentUserRef.current;
+          updatedPosts.forEach(p => {
+            if (p && p.id) {
+              map.set(p.id, {
+                ...p,
+                likedByMe: isPostLikedByUser(p, activeUser)
+              });
+            }
+          });
+          prev.forEach(p => {
+            if (p && p.id && !map.has(p.id)) {
+              map.set(p.id, p);
+            }
+          });
           return Array.from(map.values());
         });
       }
@@ -1204,51 +1231,61 @@ export default function App() {
 
   // 1. Social Interactions Handlers
   const handleLikePost = async (postId: string) => {
-    const currentUserId = currentUser.id;
-    const currentUsername = (currentUser.username || '').toLowerCase().trim().replace(/^@/, '');
+    const user = currentUserRef.current;
+    const currentUserId = user.id;
+    const currentUsername = (user.username || '').toLowerCase().trim().replace(/^@/, '');
+
+    let willBeLiked = false;
+    let targetPostForServer: Post | null = null;
 
     // Optimistic UI toggle
     setPosts(prev => prev.map(p => {
       if (p.id === postId) {
-        const existingLikedUserIds: string[] = Array.isArray(p.likedUserIds)
-          ? p.likedUserIds
-          : (p.likedByMe ? [currentUserId] : []);
+        const isCurrentlyLiked = isPostLikedByUser(p, user);
+        willBeLiked = !isCurrentlyLiked;
 
-        const isCurrentlyLiked = existingLikedUserIds.some(
-          id => id === currentUserId || id === currentUsername || id.toLowerCase() === currentUsername
-        );
+        const existingLikedUserIds: string[] = Array.isArray(p.likedUserIds)
+          ? [...p.likedUserIds]
+          : (p.likedByMe ? [currentUserId] : []);
 
         let newLikedUserIds: string[];
         let newLikesCount: number;
 
         if (isCurrentlyLiked) {
-          newLikedUserIds = existingLikedUserIds.filter(
-            id => id !== currentUserId && id !== currentUsername && id.toLowerCase() !== currentUsername
-          );
+          // Remove all matching variants of current user id or username
+          newLikedUserIds = existingLikedUserIds.filter(id => {
+            if (!id) return false;
+            const s = String(id).trim().replace(/^@/, '').toLowerCase();
+            const matchesId = currentUserId && (id === currentUserId || s === currentUserId.toLowerCase());
+            const matchesUser = currentUsername && (s === currentUsername);
+            return !matchesId && !matchesUser;
+          });
           newLikesCount = Math.max(0, (typeof p.likesCount === 'number' ? p.likesCount : existingLikedUserIds.length) - 1);
         } else {
-          newLikedUserIds = Array.from(new Set([...existingLikedUserIds, currentUserId]));
+          // Add primary identifier (current user id if available and not guest, else username)
+          const primaryId = (currentUserId && currentUserId !== 'guest') ? currentUserId : (currentUsername || 'guest');
+          newLikedUserIds = Array.from(new Set([...existingLikedUserIds, primaryId]));
           newLikesCount = Math.max(newLikedUserIds.length, (typeof p.likesCount === 'number' ? p.likesCount : 0) + 1);
         }
 
-        return {
+        const updated = {
           ...p,
           likedUserIds: newLikedUserIds,
-          likedByMe: !isCurrentlyLiked,
+          likedByMe: willBeLiked,
           likesCount: newLikesCount
         };
+        targetPostForServer = updated;
+        return updated;
       }
       return p;
     }));
 
     // Server atomic like toggle
-    const serverResult = await toggleRemotePostLike(postId, currentUserId, currentUsername);
+    const serverResult = await toggleRemotePostLike(postId, currentUserId, currentUsername, targetPostForServer);
     if (serverResult) {
       setPosts(prev => prev.map(p => {
         if (p.id === postId) {
-          const isLiked = serverResult.likedUserIds.some(
-            id => id === currentUserId || id === currentUsername || id.toLowerCase() === currentUsername
-          );
+          const isLiked = isPostLikedByUser(serverResult, currentUserRef.current);
           return {
             ...p,
             likedUserIds: serverResult.likedUserIds,
@@ -1262,12 +1299,15 @@ export default function App() {
   };
 
   const handleAddComment = async (postId: string, text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
     const newComment = {
       id: `c_${Date.now()}`,
       userId: currentUser.id,
       username: currentUser.username,
       userAvatar: currentUser.avatar,
-      text,
+      text: trimmed,
       createdAt: new Date().toISOString()
     };
 
@@ -1276,7 +1316,7 @@ export default function App() {
       if (p.id === postId) {
         const updated = {
           ...p,
-          comments: [newComment, ...p.comments]
+          comments: [newComment, ...(Array.isArray(p.comments) ? p.comments : [])]
         };
         targetPost = updated;
         return updated;
@@ -1285,7 +1325,7 @@ export default function App() {
     }));
 
     if (targetPost) {
-      saveRemotePost(targetPost);
+      await saveRemotePost(targetPost);
     }
   };
 

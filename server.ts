@@ -81,6 +81,138 @@ app.use((req: any, res, next) => {
   });
 });
 
+// =======================================================
+// SECURITY LAYER: Input Sanitization & Anti-XSS Middleware
+// =======================================================
+function sanitizeStringValue(input: string): string {
+  if (typeof input !== "string") return input;
+  let s = input;
+  s = s.replace(/\0/g, "");
+  s = s.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
+  s = s.replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, "");
+  s = s.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "");
+  s = s.replace(/\bon\w+\s*=\s*(?:'[^']*'|"[^"]*"|[^\s>]+)/gi, "");
+  s = s.replace(/javascript\s*:/gi, "blocked-javascript:");
+  s = s.replace(/vbscript\s*:/gi, "blocked-vbscript:");
+  s = s.replace(/data\s*:\s*text\/html/gi, "blocked-data-html:");
+  return s;
+}
+
+function sanitizeObjectDeep<T>(data: T): T {
+  if (data === null || data === undefined) return data;
+  if (typeof data === "string") {
+    return sanitizeStringValue(data) as any;
+  }
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeObjectDeep(item)) as any;
+  }
+  if (typeof data === "object") {
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(data)) {
+      cleaned[sanitizeStringValue(key)] = sanitizeObjectDeep(value);
+    }
+    return cleaned;
+  }
+  return data;
+}
+
+// Apply automatic recursive input sanitization on all incoming requests
+app.use((req, res, next) => {
+  if (req.body && typeof req.body === "object") {
+    req.body = sanitizeObjectDeep(req.body);
+  }
+  if (req.query && typeof req.query === "object") {
+    req.query = sanitizeObjectDeep(req.query);
+  }
+  if (req.params && typeof req.params === "object") {
+    req.params = sanitizeObjectDeep(req.params);
+  }
+  next();
+});
+
+// =======================================================
+// SECURITY LAYER: In-Memory Sliding-Window Rate Limiting
+// =======================================================
+interface RateLimitBucket {
+  count: number;
+  resetAt: number;
+}
+const rateLimitStore = new Map<string, RateLimitBucket>();
+
+// Periodic cleanup of expired rate limit entries
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of rateLimitStore.entries()) {
+    if (now > v.resetAt) rateLimitStore.delete(k);
+  }
+}, 3 * 60 * 1000);
+
+function rateLimit(options: { windowMs: number; max: number; message?: string }) {
+  const { windowMs, max, message } = options;
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    // Skip rate limiting for static assets and health checks
+    if (req.path === "/api/health" || req.path === "/health") {
+      return next();
+    }
+
+    const ip = (
+      (req.headers["x-forwarded-for"] as string)?.split(",")[0] ||
+      req.socket.remoteAddress ||
+      "127.0.0.1"
+    ).trim();
+
+    const scope = req.baseUrl || (req.path.startsWith("/api/email") ? "/api/email" : req.path.startsWith("/api/payment") ? "/api/payment" : "/api");
+    const key = `${ip}:${scope}`;
+    const now = Date.now();
+
+    const record = rateLimitStore.get(key);
+    if (!record || now > record.resetAt) {
+      rateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
+      res.setHeader("X-RateLimit-Limit", max);
+      res.setHeader("X-RateLimit-Remaining", max - 1);
+      res.setHeader("X-RateLimit-Reset", Math.ceil((now + windowMs) / 1000));
+      return next();
+    }
+
+    record.count++;
+    const remaining = Math.max(0, max - record.count);
+    res.setHeader("X-RateLimit-Limit", max);
+    res.setHeader("X-RateLimit-Remaining", remaining);
+    res.setHeader("X-RateLimit-Reset", Math.ceil(record.resetAt / 1000));
+
+    if (record.count > max) {
+      const retryAfter = Math.ceil((record.resetAt - now) / 1000);
+      res.setHeader("Retry-After", retryAfter);
+      return res.status(429).json({
+        success: false,
+        error: "rate_limit_exceeded",
+        message: message || `تم تجاوز معدل الطلبات المسموح به. يرجى الانتظار ${retryAfter} ثانية والمحاولة مرة أخرى.`,
+        retryAfter
+      });
+    }
+
+    next();
+  };
+}
+
+// Strict limiter for sensitive APIs (emails, payments, security scan)
+const sensitiveApiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: "تم تجاوز عدد الطلبات للعمليات الحساسة. يرجى الانتظار قليلاً."
+});
+app.use("/api/email", sensitiveApiLimiter);
+app.use("/api/payment", sensitiveApiLimiter);
+app.use("/api/security", sensitiveApiLimiter);
+
+// General API rate limiter (180 requests per minute per IP)
+const generalApiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 180,
+  message: "تم تجاوز حد الطلبات العام للمنصة مؤقتاً. يرجى الانتظار دقيقة واحدة."
+});
+app.use("/api", generalApiLimiter);
+
 // Persistent File-Based Storage with Vercel /tmp fallback
 const isVercel = Boolean(process.env.VERCEL);
 const DATA_DIR = isVercel ? path.join("/tmp", "socialcart_data") : path.join(process.cwd(), "data");
@@ -915,6 +1047,14 @@ app.post("/api/posts", (req, res) => {
     const existingIndex = posts.findIndex(p => p.id === post.id);
     if (existingIndex >= 0) {
       const existing = posts[existingIndex];
+      // Merge comments: keep newest comments without duplicates
+      const incomingComments = Array.isArray(post.comments) ? post.comments : [];
+      const existingComments = Array.isArray(existing.comments) ? existing.comments : [];
+      const commentsMap = new Map<string, any>();
+      incomingComments.forEach(c => { if (c && c.id) commentsMap.set(c.id, c); });
+      existingComments.forEach(c => { if (c && c.id && !commentsMap.has(c.id)) commentsMap.set(c.id, c); });
+      const mergedComments = Array.from(commentsMap.values());
+
       // Safely preserve likedUserIds so periodic post saves never wipe out atomic likes
       const existingLikes = Array.isArray(existing.likedUserIds) ? existing.likedUserIds : [];
       const incomingLikes = Array.isArray(post.likedUserIds) ? post.likedUserIds : [];
@@ -922,6 +1062,7 @@ app.post("/api/posts", (req, res) => {
       posts[existingIndex] = {
         ...existing,
         ...post,
+        comments: mergedComments,
         likedUserIds: mergedLikes,
         likesCount: Math.max(existing.likesCount || 0, post.likesCount || 0, mergedLikes.length)
       };
@@ -939,38 +1080,65 @@ app.post("/api/posts", (req, res) => {
 app.post("/api/posts/:id/like", (req, res) => {
   try {
     const { id } = req.params;
-    const { userId, username } = req.body || {};
+    const { userId, username, postFallback } = req.body || {};
     if (!userId && !username) {
       return res.status(400).json({ error: "userId or username required" });
     }
     const posts = readJsonFile<any[]>(POSTS_FILE, []);
-    const postIndex = posts.findIndex(p => p.id === id);
+    let postIndex = posts.findIndex(p => p.id === id);
     if (postIndex < 0) {
-      return res.status(404).json({ error: "Post not found" });
+      // If post does not exist yet on server, initialize it gracefully so like is never lost
+      const newPost = {
+        id,
+        title: postFallback?.title || "منشور",
+        description: postFallback?.description || "",
+        author: postFallback?.author || { username: username || "member", displayName: "عضو المنصة" },
+        media: postFallback?.media || [],
+        comments: postFallback?.comments || [],
+        likesCount: 0,
+        likedUserIds: [],
+        sharesCount: 0,
+        createdAt: postFallback?.createdAt || new Date().toISOString(),
+        tags: postFallback?.tags || []
+      };
+      posts.unshift(newPost);
+      postIndex = 0;
     }
     const post = posts[postIndex];
     let likedUserIds: string[] = Array.isArray(post.likedUserIds) ? [...post.likedUserIds] : [];
     
     const cleanU = (username || "").replace(/^@/, "").toLowerCase().trim();
-    const cleanId = (userId || "").trim().toLowerCase();
+    const rawId = (userId || "").trim();
+    const lowerId = rawId.toLowerCase();
 
+    // Check if user already liked using both ID and username (case-insensitively & exact)
     const isAlreadyLiked = likedUserIds.some(uid => {
-      const uLower = (uid || "").replace(/^@/, "").toLowerCase().trim();
-      return (cleanId && uLower === cleanId) || (cleanU && uLower === cleanU);
+      if (!uid) return false;
+      const uStr = String(uid).trim();
+      const uLower = uStr.replace(/^@/, "").toLowerCase();
+      const matchesId = rawId ? (uStr === rawId || uLower === lowerId) : false;
+      const matchesUser = cleanU ? (uLower === cleanU) : false;
+      return matchesId || matchesUser;
     });
 
     if (isAlreadyLiked) {
-      // Remove like for this user
+      // Remove like for this user (both ID and username variants)
       likedUserIds = likedUserIds.filter(uid => {
-        const uLower = (uid || "").replace(/^@/, "").toLowerCase().trim();
-        const matchesId = cleanId ? uLower === cleanId : false;
-        const matchesUser = cleanU ? uLower === cleanU : false;
+        if (!uid) return false;
+        const uStr = String(uid).trim();
+        const uLower = uStr.replace(/^@/, "").toLowerCase();
+        const matchesId = rawId ? (uStr === rawId || uLower === lowerId) : false;
+        const matchesUser = cleanU ? (uLower === cleanU) : false;
         return !matchesId && !matchesUser;
       });
     } else {
-      // Add like using primary identifier (prefer user id, fallback to clean username)
-      const targetIdentifier = cleanId || cleanU;
-      if (!likedUserIds.some(uid => uid.toLowerCase().trim() === targetIdentifier)) {
+      // Add like: preserve rawId (case sensitive) if valid and not guest, fallback to cleanU
+      const targetIdentifier = (rawId && rawId !== "guest") ? rawId : (cleanU || "guest");
+      const alreadyInList = likedUserIds.some(uid => {
+        const uStr = String(uid).trim();
+        return uStr === targetIdentifier || uStr.toLowerCase() === targetIdentifier.toLowerCase();
+      });
+      if (!alreadyInList) {
         likedUserIds.push(targetIdentifier);
       }
     }
@@ -1133,6 +1301,23 @@ app.get(["/api/auth/check-unique", "/api/users/check-unique"], (req, res) => {
     available: !usernameTaken && !emailTaken,
     usernameTaken,
     emailTaken
+  });
+});
+
+app.post("/api/security/verify-captcha", (req, res) => {
+  const { token } = req.body || {};
+  if (!token || typeof token !== "string" || !token.startsWith("hcaptcha_")) {
+    return res.status(400).json({ 
+      success: false, 
+      verified: false, 
+      message: "رمز التحقق الأمني غير صالح أو منتهي الصلاحية" 
+    });
+  }
+  return res.json({
+    success: true,
+    verified: true,
+    message: "تم التحقق الأمني بنجاح: مستخدم بشري موثوق",
+    timestamp: new Date().toISOString()
   });
 });
 

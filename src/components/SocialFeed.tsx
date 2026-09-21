@@ -23,6 +23,7 @@ import {
 import { Post, User, MediaItem } from '../types';
 import { MediaLightboxModal } from './MediaLightboxModal';
 import { formatRelativeTime } from '../utils/dateUtils';
+import { isPostLikedByUser } from '../utils/likeUtils';
 
 interface SocialFeedProps {
   posts: Post[];
@@ -305,9 +306,7 @@ export const SocialFeed: React.FC<SocialFeedProps> = ({
           filteredPosts.map(post => {
           const activeIndex = activeMediaIndex[post.id] || 0;
           const currentMedia = post.media?.[activeIndex];
-          const isLiked = Array.isArray(post.likedUserIds)
-            ? post.likedUserIds.includes(currentUser.id)
-            : Boolean(post.likedByMe);
+          const isLiked = isPostLikedByUser(post, currentUser);
 
           return (
             <article 
