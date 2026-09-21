@@ -54,82 +54,101 @@ export function isFakeComment(c: any): boolean {
  * Intelligently merges existing posts in state with incoming remote posts.
  * - Filters out any fake or dummy posts and comments.
  * - Prevents losing newly added comments or likes during background sync.
- * - Ensures deterministic, stable ordering by createdAt descending so posts never jump or disappear.
+ * - STABILITY GUARANTEE: Existing posts retain their exact position in the feed;
+ *   they will NEVER jump up or down. New posts are sorted deterministically and prepended.
+ * - IMMUTABILITY: A post's createdAt timestamp is strictly preserved.
  */
 export function mergePostLists(currentPosts: Post[], incomingPosts: Post[], activeUser: User): Post[] {
-  const postMap = new Map<string, Post>();
-
-  // 1. First index existing posts (strictly filtering out any fake posts or comments)
+  const currentPostMap = new Map<string, Post>();
   currentPosts.forEach(p => {
     if (p && p.id && !isFakePost(p)) {
-      const cleanComments = (Array.isArray(p.comments) ? p.comments : []).filter(c => !isFakeComment(c));
-      postMap.set(p.id, {
-        ...p,
-        comments: cleanComments
-      });
+      currentPostMap.set(p.id, p);
     }
   });
 
-  // 2. Merge incoming posts (strictly excluding any fake posts)
+  const incomingMap = new Map<string, Post>();
+  incomingPosts.forEach(p => {
+    if (p && p.id && !isFakePost(p)) {
+      incomingMap.set(p.id, p);
+    }
+  });
+
+  // 1. Update existing posts while strictly PRESERVING their exact position in the feed
+  const updatedExistingPosts: Post[] = [];
+  currentPosts.forEach(existing => {
+    if (!existing || !existing.id || isFakePost(existing)) return;
+    const incoming = incomingMap.get(existing.id);
+
+    if (!incoming) {
+      updatedExistingPosts.push(existing);
+      return;
+    }
+
+    // Merge comments
+    const existingComments = (Array.isArray(existing.comments) ? existing.comments : []).filter(c => !isFakeComment(c));
+    const incomingComments = (Array.isArray(incoming.comments) ? incoming.comments : []).filter(c => !isFakeComment(c));
+    const commentMap = new Map<string, any>();
+    existingComments.forEach(c => { if (c && c.id && !isFakeComment(c)) commentMap.set(c.id, c); });
+    incomingComments.forEach(c => { if (c && c.id && !isFakeComment(c)) commentMap.set(c.id, c); });
+    const mergedComments = Array.from(commentMap.values()).sort((a, b) => {
+      const tA = new Date(a.createdAt || 0).getTime() || 0;
+      const tB = new Date(b.createdAt || 0).getTime() || 0;
+      if (tB !== tA) return tB - tA;
+      return String(b.id).localeCompare(String(a.id));
+    });
+
+    // Likes sync: preserve clean list, exclude guests
+    const incomingLikes = (Array.isArray(incoming.likedUserIds) ? incoming.likedUserIds : []).filter(uid => uid && uid !== 'guest');
+    const existingLikes = (Array.isArray(existing.likedUserIds) ? existing.likedUserIds : []).filter(uid => uid && uid !== 'guest');
+    
+    // Choose latest valid like set
+    const likedUserIds = incomingLikes.length > 0 ? incomingLikes : existingLikes;
+    const isLiked = isPostLikedByUser({ ...incoming, likedUserIds }, activeUser);
+
+    updatedExistingPosts.push({
+      ...existing,
+      ...incoming,
+      id: existing.id,
+      // CRITICAL: createdAt is 100% immutable! Never allow incoming to change an existing post's timestamp!
+      createdAt: existing.createdAt || incoming.createdAt || new Date().toISOString(),
+      title: incoming.title || existing.title,
+      description: incoming.description !== undefined ? incoming.description : existing.description,
+      media: (Array.isArray(incoming.media) && incoming.media.length > 0) ? incoming.media : (existing.media || []),
+      tags: (Array.isArray(incoming.tags) && incoming.tags.length > 0) ? incoming.tags : (existing.tags || []),
+      comments: mergedComments,
+      likedUserIds,
+      likesCount: typeof incoming.likesCount === 'number' ? incoming.likesCount : (likedUserIds.length || existing.likesCount || 0),
+      likedByMe: isLiked
+    });
+  });
+
+  // 2. Identify brand-new posts that weren't in the feed yet
+  const brandNewPosts: Post[] = [];
   incomingPosts.forEach(incoming => {
     if (!incoming || !incoming.id || isFakePost(incoming)) return;
-    const existing = postMap.get(incoming.id);
-
-    if (!existing) {
-      // New post from remote
+    if (!currentPostMap.has(incoming.id)) {
       const cleanComments = (Array.isArray(incoming.comments) ? incoming.comments : []).filter(c => !isFakeComment(c));
-      postMap.set(incoming.id, {
+      const likedUserIds = (Array.isArray(incoming.likedUserIds) ? incoming.likedUserIds : []).filter(uid => uid && uid !== 'guest');
+      const isLiked = isPostLikedByUser({ ...incoming, likedUserIds }, activeUser);
+      brandNewPosts.push({
         ...incoming,
         comments: cleanComments,
-        likedByMe: isPostLikedByUser(incoming, activeUser)
-      });
-    } else {
-      // Merge comments: combine unique comment IDs, filtering out any fake comments
-      const existingComments = (Array.isArray(existing.comments) ? existing.comments : []).filter(c => !isFakeComment(c));
-      const incomingComments = (Array.isArray(incoming.comments) ? incoming.comments : []).filter(c => !isFakeComment(c));
-      const commentMap = new Map<string, any>();
-      
-      incomingComments.forEach(c => { if (c && c.id && !isFakeComment(c)) commentMap.set(c.id, c); });
-      existingComments.forEach(c => { if (c && c.id && !isFakeComment(c)) commentMap.set(c.id, c); });
-      
-      const mergedComments = Array.from(commentMap.values()).sort(
-        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-      );
-
-      // Merge likes: combine likedUserIds safely (excluding guest)
-      const existingLikes = Array.isArray(existing.likedUserIds) ? existing.likedUserIds : [];
-      const incomingLikes = Array.isArray(incoming.likedUserIds) ? incoming.likedUserIds : [];
-      const mergedLikes = Array.from(new Set([...existingLikes, ...incomingLikes])).filter(uid => uid && uid !== 'guest');
-
-      const isLiked = isPostLikedByUser({
-        ...incoming,
-        likedUserIds: mergedLikes,
-        likedByMe: existing.likedByMe
-      }, activeUser);
-
-      postMap.set(incoming.id, {
-        ...existing,
-        ...incoming,
-        title: incoming.title || existing.title,
-        description: incoming.description !== undefined ? incoming.description : existing.description,
-        media: (Array.isArray(incoming.media) && incoming.media.length > 0) ? incoming.media : (existing.media || []),
-        tags: (Array.isArray(incoming.tags) && incoming.tags.length > 0) ? incoming.tags : (existing.tags || []),
-        comments: mergedComments,
-        likedUserIds: mergedLikes,
-        likesCount: Math.max(mergedLikes.length, incoming.likesCount || 0, existing.likesCount || 0),
+        likedUserIds,
+        likesCount: typeof incoming.likesCount === 'number' ? incoming.likesCount : likedUserIds.length,
         likedByMe: isLiked,
-        createdAt: incoming.createdAt || existing.createdAt || new Date().toISOString()
+        createdAt: incoming.createdAt || new Date().toISOString()
       });
     }
   });
 
-  // 3. ALWAYS sort deterministically by createdAt descending so posts never jump around or flicker
-  const result = Array.from(postMap.values());
-  result.sort((a, b) => {
-    const timeA = new Date(a.createdAt || 0).getTime();
-    const timeB = new Date(b.createdAt || 0).getTime();
-    return timeB - timeA;
+  // Sort brand-new posts deterministically (newest first, with secondary tie-breaker by ID)
+  brandNewPosts.sort((a, b) => {
+    const timeA = new Date(a.createdAt || 0).getTime() || 0;
+    const timeB = new Date(b.createdAt || 0).getTime() || 0;
+    if (timeB !== timeA) return timeB - timeA;
+    return String(b.id).localeCompare(String(a.id));
   });
 
-  return result;
+  // Prepend genuinely new posts to the stable existing list
+  return [...brandNewPosts, ...updatedExistingPosts];
 }

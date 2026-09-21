@@ -65,10 +65,28 @@ export async function fetchRemotePosts(): Promise<Post[]> {
     console.warn('Notice: Server posts fetch:', err);
   }
 
-  // Merge results, preferring Firestore if both exist
+  // Merge results, safely preserving existing fields and never overwriting complete posts with partials
   const postMap = new Map<string, Post>();
   serverPosts.forEach(p => { if (p && p.id) postMap.set(p.id, p); });
-  firestorePosts.forEach(p => { if (p && p.id) postMap.set(p.id, p); });
+  firestorePosts.forEach(p => {
+    if (p && p.id) {
+      const existing = postMap.get(p.id);
+      if (existing) {
+        postMap.set(p.id, {
+          ...existing,
+          ...p,
+          title: p.title || existing.title,
+          description: p.description !== undefined ? p.description : existing.description,
+          media: (Array.isArray(p.media) && p.media.length > 0) ? p.media : (existing.media || []),
+          createdAt: existing.createdAt || p.createdAt, // Preserve original timestamp
+          likedUserIds: (Array.isArray(p.likedUserIds) && p.likedUserIds.length > 0) ? p.likedUserIds : (existing.likedUserIds || []),
+          likesCount: typeof p.likesCount === 'number' ? p.likesCount : (existing.likesCount || 0)
+        });
+      } else if (p.title || p.description || (Array.isArray(p.media) && p.media.length > 0)) {
+        postMap.set(p.id, p);
+      }
+    }
+  });
 
   // If we got items from Firestore that weren't on server, sync them to server
   if (firestorePosts.length > 0) {
@@ -84,7 +102,12 @@ export async function fetchRemotePosts(): Promise<Post[]> {
   }
 
   const combined = Array.from(postMap.values());
-  combined.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  combined.sort((a, b) => {
+    const timeA = new Date(a.createdAt || 0).getTime() || 0;
+    const timeB = new Date(b.createdAt || 0).getTime() || 0;
+    if (timeB !== timeA) return timeB - timeA;
+    return String(b.id).localeCompare(String(a.id));
+  });
   return combined;
 }
 
@@ -187,8 +210,10 @@ export async function toggleRemotePostLike(
   if (isFirebaseReady() && result) {
     try {
       await setDoc(doc(db, 'posts', postId), {
+        id: postId,
         likedUserIds: result.likedUserIds,
-        likesCount: result.likesCount
+        likesCount: result.likesCount,
+        ...(postFallback?.createdAt ? { createdAt: postFallback.createdAt } : {})
       }, { merge: true });
     } catch (err) {
       console.warn('Notice: Firestore like sync:', err);
@@ -224,10 +249,20 @@ export function subscribeToRemotePosts(onUpdate: (posts: Post[]) => void): () =>
           const list: Post[] = [];
           snap.forEach(d => {
             const item = d.data() as Post;
-            if (item && item.id) list.push(item);
+            // Only push valid complete posts to prevent empty partial updates
+            if (item && item.id && (item.title || item.description || (Array.isArray(item.media) && item.media.length > 0))) {
+              list.push(item);
+            }
           });
-          list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-          onUpdate(list);
+          if (list.length > 0) {
+            list.sort((a, b) => {
+              const timeA = new Date(a.createdAt || 0).getTime() || 0;
+              const timeB = new Date(b.createdAt || 0).getTime() || 0;
+              if (timeB !== timeA) return timeB - timeA;
+              return String(b.id).localeCompare(String(a.id));
+            });
+            onUpdate(list);
+          }
         }
       }, (err) => {
         console.warn('Firestore posts realtime subscription:', err);
@@ -243,7 +278,12 @@ export function subscribeToRemotePosts(onUpdate: (posts: Post[]) => void): () =>
       .then(res => res.ok ? res.json() : [])
       .then((serverPosts: Post[]) => {
         if (Array.isArray(serverPosts) && serverPosts.length > 0) {
-          const sorted = [...serverPosts].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          const sorted = [...serverPosts].sort((a, b) => {
+            const timeA = new Date(a.createdAt || 0).getTime() || 0;
+            const timeB = new Date(b.createdAt || 0).getTime() || 0;
+            if (timeB !== timeA) return timeB - timeA;
+            return String(b.id).localeCompare(String(a.id));
+          });
           onUpdate(sorted);
         }
       })

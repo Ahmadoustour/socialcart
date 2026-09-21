@@ -30,6 +30,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClos
   const [mediaCaptionInput, setMediaCaptionInput] = useState('');
   const [securityError, setSecurityError] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
@@ -106,32 +107,42 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClos
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting || isScanning) return;
+
     if (!title.trim() || !description.trim()) {
       alert('يرجى كتابة عنوان وتفاصيل للمنشور');
       return;
     }
 
-    // Scan the whole post text and media links for malicious content
-    setIsScanning(true);
-    setSecurityError(null);
-    const contentCheck = await scanContentLive(
-      `${title} ${description}`,
-      mediaList.map(m => m.url)
-    );
-    setIsScanning(false);
+    try {
+      setIsSubmitting(true);
+      setIsScanning(true);
+      setSecurityError(null);
 
-    if (!contentCheck.isSafe) {
-      setSecurityError(`تم منع النشر: ${contentCheck.threats.join(' | ')}`);
-      return;
+      // Scan the whole post text and media links for malicious content
+      const contentCheck = await scanContentLive(
+        `${title} ${description}`,
+        mediaList.map(m => m.url)
+      );
+
+      if (!contentCheck.isSafe) {
+        setSecurityError(`تم منع النشر: ${contentCheck.threats.join(' | ')}`);
+        return;
+      }
+
+      const tags = tagsInput
+        .split(/[\s,#]+/)
+        .map(t => t.trim())
+        .filter(Boolean);
+
+      onSubmit(title.trim(), description.trim(), mediaList, tags);
+      onClose();
+    } catch (err: any) {
+      console.warn('Notice: Submit post error:', err);
+    } finally {
+      setIsScanning(false);
+      setIsSubmitting(false);
     }
-
-    const tags = tagsInput
-      .split(/[\s,#]+/)
-      .map(t => t.trim())
-      .filter(Boolean);
-
-    onSubmit(title.trim(), description.trim(), mediaList, tags);
-    onClose();
   };
 
   return (
@@ -328,10 +339,22 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClos
             </button>
             <button
               type="submit"
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-2.5 rounded-xl shadow-md transition flex items-center gap-1.5"
+              disabled={isSubmitting || isScanning}
+              className={`bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-2.5 rounded-xl shadow-md transition flex items-center gap-2 select-none ${
+                isSubmitting || isScanning ? 'opacity-60 cursor-not-allowed pointer-events-none' : 'active:scale-95 cursor-pointer'
+              }`}
             >
-              <Sparkles className="w-4 h-4" />
-              <span>نشر المنشور الآن</span>
+              {isSubmitting || isScanning ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>جاري فحص ونشر المنشور...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>نشر المنشور الآن</span>
+                </>
+              )}
             </button>
           </div>
 

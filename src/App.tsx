@@ -380,6 +380,10 @@ export default function App() {
     currentUserRef.current = currentUser;
   }, [currentUser]);
 
+  // Anti-duplicate creation locks (prevent accidental double/multi clicking)
+  const isCreatingPostRef = useRef(false);
+  const isCreatingProductRef = useRef(false);
+
   const [posts, setPosts] = useState<Post[]>(() => {
     const saved = localStorage.getItem('socialcart_posts');
     if (!saved) return [];
@@ -555,7 +559,14 @@ export default function App() {
   }, [orders, currentUser.id]);
 
   useEffect(() => {
-    localStorage.setItem('socialcart_posts', JSON.stringify(posts));
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem('socialcart_posts', JSON.stringify(posts));
+      } catch (err) {
+        console.warn('Notice: localStorage posts save:', err);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
   }, [posts]);
 
   useEffect(() => {
@@ -1396,6 +1407,11 @@ export default function App() {
   };
 
   const handleCreatePost = async (title: string, description: string, media: MediaItem[], tags: string[]) => {
+    // Guard against multi-click duplicate submissions
+    if (isCreatingPostRef.current) return;
+    isCreatingPostRef.current = true;
+    setTimeout(() => { isCreatingPostRef.current = false; }, 1500);
+
     const newPost: Post = {
       id: `post_${Date.now()}`,
       userId: currentUser.id,
@@ -1505,6 +1521,11 @@ export default function App() {
     fileUrl: string;
     downloadSize: string;
   }) => {
+    // Guard against multi-click duplicate submissions
+    if (isCreatingProductRef.current) return;
+    isCreatingProductRef.current = true;
+    setTimeout(() => { isCreatingProductRef.current = false; }, 1500);
+
     const hasExistingSellerReviews = Boolean(currentUser.sellerReviewsCount && currentUser.sellerReviewsCount > 0);
     const initialRating = hasExistingSellerReviews ? (currentUser.sellerRating || 0) : 0;
     const initialReviewsCount = hasExistingSellerReviews ? currentUser.sellerReviewsCount! : 0;

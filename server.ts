@@ -1082,8 +1082,13 @@ app.get("/api/posts", (req, res) => {
       comments: (Array.isArray(p.comments) ? p.comments : []).filter(c => !isServerFakeComment(c))
     }));
 
-  // Always sort deterministic newest-first by createdAt
-  cleanPosts.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  // Always sort deterministic newest-first by createdAt with secondary tie-breaker by id
+  cleanPosts.sort((a, b) => {
+    const timeA = new Date(a.createdAt || 0).getTime() || 0;
+    const timeB = new Date(b.createdAt || 0).getTime() || 0;
+    if (timeB !== timeA) return timeB - timeA;
+    return String(b.id).localeCompare(String(a.id));
+  });
   res.json(cleanPosts);
 });
 
@@ -1116,13 +1121,30 @@ app.post("/api/posts", (req, res) => {
         ...post,
         comments: mergedComments,
         likedUserIds: mergedLikes,
-        likesCount: Math.max(existing.likesCount || 0, post.likesCount || 0, mergedLikes.length)
+        likesCount: Math.max(existing.likesCount || 0, post.likesCount || 0, mergedLikes.length),
+        createdAt: existing.createdAt || post.createdAt // STRICT IMMUTABILITY
       };
     } else {
+      // Server deduplication: if exact same post from user was submitted within 5 seconds, ignore duplicate
+      const isDuplicate = posts.some(p =>
+        p && p.id !== post.id &&
+        p.userId === post.userId &&
+        p.title === post.title &&
+        p.description === post.description &&
+        Math.abs(new Date(p.createdAt || 0).getTime() - new Date(post.createdAt || 0).getTime()) < 5000
+      );
+      if (isDuplicate) {
+        return res.json(posts.find(p => p.userId === post.userId && p.title === post.title) || post);
+      }
       posts.unshift(post);
     }
-    // Sort before saving
-    posts.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    // Sort deterministically before saving
+    posts.sort((a, b) => {
+      const timeA = new Date(a.createdAt || 0).getTime() || 0;
+      const timeB = new Date(b.createdAt || 0).getTime() || 0;
+      if (timeB !== timeA) return timeB - timeA;
+      return String(b.id).localeCompare(String(a.id));
+    });
     writeJsonFile(POSTS_FILE, posts);
     res.json(posts[existingIndex >= 0 ? existingIndex : 0]);
   } catch (error: any) {
@@ -1350,6 +1372,16 @@ app.post("/api/products", (req, res) => {
     if (existingIndex >= 0) {
       products[existingIndex] = { ...products[existingIndex], ...product };
     } else {
+      // Server deduplication: if exact same product from seller was submitted within 5 seconds, ignore duplicate
+      const isDuplicate = products.some(p =>
+        p && p.id !== product.id &&
+        p.sellerId === product.sellerId &&
+        p.title === product.title &&
+        Math.abs(new Date(p.createdAt || 0).getTime() - new Date(product.createdAt || 0).getTime()) < 5000
+      );
+      if (isDuplicate) {
+        return res.json(products.find(p => p.sellerId === product.sellerId && p.title === product.title) || product);
+      }
       products.unshift(product);
     }
     writeJsonFile(PRODUCTS_FILE, products);

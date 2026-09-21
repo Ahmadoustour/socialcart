@@ -45,6 +45,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({ isOpen, 
   const [mediaCaptionInput, setMediaCaptionInput] = useState('');
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
   const [securityError, setSecurityError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
@@ -104,49 +105,59 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({ isOpen, 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     if (!title.trim() || !description.trim() || !price || !fileUrl.trim()) {
       alert('يرجى ملء جميع الحقول الإلزامية وتوفير رابط الملف الرقمي');
       return;
     }
 
-    // 1. Scan digital file URL for security
-    const scan = await scanUrlLive(fileUrl, 'file');
-    if (!scan.isSafe) {
-      alert(`تحذير أمني بخصوص رابط الملف الرقمي:\n${scan.threats.join('\n')}`);
-      return;
-    }
+    try {
+      setIsSubmitting(true);
 
-    // 2. Scan entire description and media list for embedded threats
-    const contentCheck = await scanContentLive(
-      `${title} ${description}`,
-      [fileUrl, ...mediaList.map(m => m.url)]
-    );
-    if (!contentCheck.isSafe) {
-      alert(`تم رفض نشر المنتج بسبب محتوى غير آمن:\n${contentCheck.threats.join('\n')}`);
-      return;
-    }
-
-    const defaultMedia: MediaItem[] = mediaList.length > 0 ? mediaList : [
-      {
-        id: 'default_img',
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format&fit=crop&q=80',
-        caption: 'غلاف المنتج الافتراضي'
+      // 1. Scan digital file URL for security
+      const scan = await scanUrlLive(fileUrl, 'file');
+      if (!scan.isSafe) {
+        alert(`تحذير أمني بخصوص رابط الملف الرقمي:\n${scan.threats.join('\n')}`);
+        return;
       }
-    ];
 
-    onSubmit({
-      title: title.trim(),
-      description: description.trim(),
-      category,
-      price: Number(price),
-      originalPrice: originalPrice ? Number(originalPrice) : undefined,
-      media: defaultMedia,
-      fileUrl: fileUrl.trim(),
-      downloadSize: downloadSize.trim() || '50 MB'
-    });
+      // 2. Scan entire description and media list for embedded threats
+      const contentCheck = await scanContentLive(
+        `${title} ${description}`,
+        [fileUrl, ...mediaList.map(m => m.url)]
+      );
+      if (!contentCheck.isSafe) {
+        alert(`تم رفض نشر المنتج بسبب محتوى غير آمن:\n${contentCheck.threats.join('\n')}`);
+        return;
+      }
 
-    onClose();
+      const defaultMedia: MediaItem[] = mediaList.length > 0 ? mediaList : [
+        {
+          id: 'default_img',
+          type: 'image',
+          url: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format&fit=crop&q=80',
+          caption: 'غلاف المنتج الافتراضي'
+        }
+      ];
+
+      onSubmit({
+        title: title.trim(),
+        description: description.trim(),
+        category,
+        price: Number(price),
+        originalPrice: originalPrice ? Number(originalPrice) : undefined,
+        media: defaultMedia,
+        fileUrl: fileUrl.trim(),
+        downloadSize: downloadSize.trim() || '50 MB'
+      });
+
+      onClose();
+    } catch (err: any) {
+      console.warn('Notice: Submit product error:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -412,10 +423,22 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({ isOpen, 
             </button>
             <button
               type="submit"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-xl shadow-md transition flex items-center gap-1.5"
+              disabled={isSubmitting}
+              className={`bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-xl shadow-md transition flex items-center gap-2 select-none ${
+                isSubmitting ? 'opacity-60 cursor-not-allowed pointer-events-none' : 'active:scale-95 cursor-pointer'
+              }`}
             >
-              <Sparkles className="w-4 h-4" />
-              <span>إدراج المنتج في الماركت الآن</span>
+              {isSubmitting ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>جاري فحص وإدراج المنتج...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>إدراج المنتج في الماركت الآن</span>
+                </>
+              )}
             </button>
           </div>
 
